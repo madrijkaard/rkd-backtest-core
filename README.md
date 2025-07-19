@@ -15,7 +15,6 @@
 ├── executor.py              # Main script to run the backtests
 ├── resources.py             # Global configuration file
 ├── strategies/              # Directory for all strategies
-│   ├── __init__.py
 │   └── strategy_max_min.py  # Logarithmic high/low zone strategy
 └── backtest/                # (generated) Excel files with results
 ```
