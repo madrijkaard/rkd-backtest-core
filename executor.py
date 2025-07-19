@@ -12,11 +12,11 @@ from strategies.strategy_max_min import estrategia_max_min
 
 # Mapeia timeframes para frequências compatíveis com Pandas
 TIMEFRAME_TO_FREQ = {
-    '15m': '15T',
-    '30m': '30T',
-    '1h': '1H',
-    '4h': '4H',
-    '1d': '1D'
+    '15m': '15min',
+    '30m': '30min',
+    '1h': '1h',
+    '4h': '4h',
+    '1d': '1d'
 }
 
 def executar_backtest(binance, symbol, timeframe_str, start_date, estrategia_func, lookback: int, limit=1000):
@@ -48,7 +48,7 @@ def executar_para_todos():
     # Limpa todos os arquivos existentes na pasta backtest/
     for f in glob.glob(os.path.join(OUTPUT_FOLDER, "*")):
         os.remove(f)
-    print(f"🧹 Pasta '{OUTPUT_FOLDER}' limpa com sucesso.")
+    print(f"\n🧹 Pasta '{OUTPUT_FOLDER}' limpa com sucesso.")
 
     binance = ccxt.binance()
     datas = [datetime.datetime(year, month, 1)
@@ -75,7 +75,7 @@ def executar_para_todos():
                     resultados.append(stats)
 
             if not resultados:
-                print(f"⚠ Sem dados suficientes para {symbol} {tf}")
+                print(f"\n⚠ Sem dados suficientes para {symbol} {tf}")
                 continue
 
             df = pd.DataFrame(resultados)
@@ -86,7 +86,7 @@ def executar_para_todos():
 
         file_path = os.path.join(OUTPUT_FOLDER, f"{symbol}.xlsx")
         wb.save(file_path)
-        print(f"✅ Arquivo salvo: {file_path}")
+        print(f"\n✅ Arquivo salvo: {file_path}")
 
 if __name__ == "__main__":
     executar_para_todos()
