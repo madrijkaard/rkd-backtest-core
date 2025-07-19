@@ -6,7 +6,7 @@ from openpyxl import Workbook
 from openpyxl.utils.dataframe import dataframe_to_rows
 from tqdm import tqdm
 
-from resources import TIMEFRAMES, START_YEAR, END_YEAR, LOOKBACK, CRYPTOS, OUTPUT_FOLDER
+from resources import TIMEFRAMES, START_YEAR, END_YEAR, LOOKBACK, CRYPTOS, OUTPUT_FOLDER, CANDLE_LIMIT
 from strategies.strategy_max_min import estrategia_max_min
 from exchanges import get_exchange
 
@@ -18,7 +18,7 @@ TIMEFRAME_TO_FREQ = {
     '1d': '1d'
 }
 
-def executar_backtest(exchange, symbol, timeframe_str, start_date, estrategia_func, lookback: int, limit=1000):
+def executar_backtest(exchange, symbol, timeframe_str, start_date, estrategia_func, lookback: int, limit: int):
     since = int(start_date.timestamp() * 1000)
     try:
         ohlcv = exchange.fetch_ohlcv(symbol, timeframe=timeframe_str, since=since, limit=limit)
@@ -66,7 +66,8 @@ def executar_para_todos():
                     tf,
                     start_date,
                     estrategia_func=estrategia_max_min,
-                    lookback=LOOKBACK
+                    lookback=LOOKBACK,
+                    limit=CANDLE_LIMIT
                 )
                 if stats is not None:
                     resultados.append(stats)

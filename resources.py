@@ -20,3 +20,6 @@ OUTPUT_FOLDER = "backtest"
 
 # Exchange ativa (apenas uma deve estar ativa por vez)
 EXCHANGE_NAME = "binance"  # opções: binance, coinbasepro, bybit, huobi
+
+# Quantidade de candles a serem carregados por backtest
+CANDLE_LIMIT = 1000
