@@ -1,5 +1,3 @@
-# executor.py
-
 import os
 import ccxt
 import datetime
@@ -9,7 +7,15 @@ from openpyxl.utils.dataframe import dataframe_to_rows
 from tqdm import tqdm
 
 from resources import TIMEFRAMES, START_YEAR, END_YEAR, LOOKBACK, CRYPTOS, OUTPUT_FOLDER
-from strategies.strategy_max_min import estrategia_max_min  # caminho atualizado
+from strategies.strategy_max_min import estrategia_max_min
+
+TIMEFRAME_TO_FREQ = {
+    '15m': '15T',
+    '30m': '30T',
+    '1h': '1H',
+    '4h': '4H',
+    '1d': '1D'
+}
 
 def executar_backtest(binance, symbol, timeframe_str, start_date, estrategia_func, lookback: int, limit=1000):
     since = int(start_date.timestamp() * 1000)
@@ -27,7 +33,8 @@ def executar_backtest(binance, symbol, timeframe_str, start_date, estrategia_fun
     if len(close) < lookback:
         return None
 
-    pf = estrategia_func(close, lookback)
+    freq = TIMEFRAME_TO_FREQ.get(timeframe_str, None)
+    pf = estrategia_func(close, lookback, freq=freq)
     stats = pf.stats()
     stats["Data"] = start_date.strftime("%Y-%m-%d")
     return stats

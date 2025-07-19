@@ -25,7 +25,7 @@ def calc_zonas(row: pd.Series) -> pd.Series:
         max_
     ], index=[f'line_{i}' for i in range(1, 10)])
 
-def estrategia_max_min(close: pd.Series, lookback: int) -> vbt.Portfolio:
+def estrategia_max_min(close: pd.Series, lookback: int, freq: str) -> vbt.Portfolio:
     price_min = close.rolling(lookback).min()
     price_max = close.rolling(lookback).max()
     zona_df = pd.concat([price_min.rename('min'), price_max.rename('max')], axis=1)
@@ -79,7 +79,7 @@ def estrategia_max_min(close: pd.Series, lookback: int) -> vbt.Portfolio:
         size=position_size,
         fees=0.001,
         slippage=0.001,
-        freq=None  # o timeframe não afeta o cálculo aqui
+        freq=freq
     )
 
     return pf
