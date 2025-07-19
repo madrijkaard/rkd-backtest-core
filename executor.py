@@ -1,4 +1,5 @@
 import os
+import glob
 import ccxt
 import datetime
 import pandas as pd
@@ -9,6 +10,7 @@ from tqdm import tqdm
 from resources import TIMEFRAMES, START_YEAR, END_YEAR, LOOKBACK, CRYPTOS, OUTPUT_FOLDER
 from strategies.strategy_max_min import estrategia_max_min
 
+# Mapeia timeframes para frequências compatíveis com Pandas
 TIMEFRAME_TO_FREQ = {
     '15m': '15T',
     '30m': '30T',
@@ -40,12 +42,18 @@ def executar_backtest(binance, symbol, timeframe_str, start_date, estrategia_fun
     return stats
 
 def executar_para_todos():
+    # Garante que a pasta existe
+    os.makedirs(OUTPUT_FOLDER, exist_ok=True)
+
+    # Limpa todos os arquivos existentes na pasta backtest/
+    for f in glob.glob(os.path.join(OUTPUT_FOLDER, "*")):
+        os.remove(f)
+    print(f"🧹 Pasta '{OUTPUT_FOLDER}' limpa com sucesso.")
+
     binance = ccxt.binance()
     datas = [datetime.datetime(year, month, 1)
              for year in range(START_YEAR, END_YEAR + 1)
              for month in range(1, 13)]
-
-    os.makedirs(OUTPUT_FOLDER, exist_ok=True)
 
     for symbol in CRYPTOS:
         print(f"\n🔍 Processando {symbol}...")
