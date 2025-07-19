@@ -10,7 +10,6 @@ from tqdm import tqdm
 from resources import TIMEFRAMES, START_YEAR, END_YEAR, LOOKBACK, CRYPTOS, OUTPUT_FOLDER
 from strategies.strategy_max_min import estrategia_max_min
 
-# Mapeia timeframes para frequências compatíveis com Pandas
 TIMEFRAME_TO_FREQ = {
     '15m': '15min',
     '30m': '30min',
