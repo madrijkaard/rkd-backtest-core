@@ -1,6 +1,5 @@
 import os
 import glob
-import ccxt
 import datetime
 import pandas as pd
 from openpyxl import Workbook
@@ -9,6 +8,7 @@ from tqdm import tqdm
 
 from resources import TIMEFRAMES, START_YEAR, END_YEAR, LOOKBACK, CRYPTOS, OUTPUT_FOLDER
 from strategies.strategy_max_min import estrategia_max_min
+from exchanges import get_exchange
 
 TIMEFRAME_TO_FREQ = {
     '15m': '15min',
@@ -18,10 +18,10 @@ TIMEFRAME_TO_FREQ = {
     '1d': '1d'
 }
 
-def executar_backtest(binance, symbol, timeframe_str, start_date, estrategia_func, lookback: int, limit=1000):
+def executar_backtest(exchange, symbol, timeframe_str, start_date, estrategia_func, lookback: int, limit=1000):
     since = int(start_date.timestamp() * 1000)
     try:
-        ohlcv = binance.fetch_ohlcv(symbol, timeframe=timeframe_str, since=since, limit=limit)
+        ohlcv = exchange.fetch_ohlcv(symbol, timeframe=timeframe_str, since=since, limit=limit)
     except Exception as e:
         print(f"Erro em {symbol} {timeframe_str} {start_date.date()}: {e}")
         return None
@@ -41,15 +41,13 @@ def executar_backtest(binance, symbol, timeframe_str, start_date, estrategia_fun
     return stats
 
 def executar_para_todos():
-    # Garante que a pasta existe
     os.makedirs(OUTPUT_FOLDER, exist_ok=True)
 
-    # Limpa todos os arquivos existentes na pasta backtest/
     for f in glob.glob(os.path.join(OUTPUT_FOLDER, "*")):
         os.remove(f)
     print(f"\n🧹 Pasta '{OUTPUT_FOLDER}' limpa com sucesso.")
 
-    binance = ccxt.binance()
+    exchange = get_exchange()
     datas = [datetime.datetime(year, month, 1)
              for year in range(START_YEAR, END_YEAR + 1)
              for month in range(1, 13)]
@@ -63,7 +61,7 @@ def executar_para_todos():
             resultados = []
             for start_date in tqdm(datas, desc=f"{symbol} {tf}", unit="mês"):
                 stats = executar_backtest(
-                    binance,
+                    exchange,
                     symbol.replace("USDT", "/USDT"),
                     tf,
                     start_date,

@@ -17,3 +17,6 @@ CRYPTOS = [
 
 # Caminho da pasta onde os arquivos serão salvos
 OUTPUT_FOLDER = "backtest"
+
+# Exchange ativa (apenas uma deve estar ativa por vez)
+EXCHANGE_NAME = "binance"  # opções: binance, coinbasepro, bybit, huobi
