@@ -7,7 +7,7 @@ from openpyxl.utils.dataframe import dataframe_to_rows
 from tqdm import tqdm
 
 from resources import TIMEFRAMES, START_YEAR, END_YEAR, LOOKBACK, CRYPTOS, OUTPUT_FOLDER
-from strategy.max_min_strategy import estrategia_max_min
+from strategy.peaks_and_valleys import estrategia_max_min
 from exchange import get_exchange
 
 TIMEFRAME_TO_FREQ = {
