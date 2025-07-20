@@ -6,12 +6,9 @@ from openpyxl import Workbook
 from openpyxl.utils.dataframe import dataframe_to_rows
 from tqdm import tqdm
 
-from resources import TIMEFRAMES, START_YEAR, END_YEAR, LOOKBACK, CRYPTOS, OUTPUT_FOLDER, OUTPUT_REPORT
+from resources import TIMEFRAMES, START_YEAR, END_YEAR, LOOKBACK, CRYPTOS, OUTPUT_FOLDER
 from strategies.strategy_max_min import estrategia_max_min
 from exchanges import get_exchange
-
-from relatorio_detalhado import gerar_relatorios_detalhados_por_cripto
-from relatorio_por_timeframe import gerar_relatorio_por_timeframe
 
 TIMEFRAME_TO_FREQ = {
     '15m': '15min',
@@ -50,10 +47,6 @@ def executar_para_todos():
         os.remove(f)
     print(f"\n🧹 Pasta '{OUTPUT_FOLDER}' limpa com sucesso.")
 
-    for f in glob.glob(os.path.join(OUTPUT_REPORT, "*")):
-        os.remove(f)
-    print(f"\n🧹 Pasta '{OUTPUT_REPORT}' limpa com sucesso.")
-
     exchange = get_exchange()
     datas = [datetime.datetime(year, month, 1)
              for year in range(START_YEAR, END_YEAR + 1)
@@ -91,12 +84,6 @@ def executar_para_todos():
         file_path = os.path.join(OUTPUT_FOLDER, f"{symbol}.xlsx")
         wb.save(file_path)
         print(f"\n✅ Arquivo salvo: {file_path}")
-
-    # Relatórios consolidados
-    print("\n📊 Gerando relatórios consolidados...")
-
-    gerar_relatorios_detalhados_por_cripto()
-    gerar_relatorio_por_timeframe()
 
 if __name__ == "__main__":
     executar_para_todos()

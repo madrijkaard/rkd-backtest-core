@@ -1,28 +1,23 @@
-# Período gráfico utilizado no backtest (ex: '15m', '1h', '4h', etc.)
+# Períodos gráficos utilizados no backtest
 TIMEFRAMES = ['15m', '30m', '1h', '4h']
 
 # Intervalo de anos para o backtest
 START_YEAR = 2020
-END_YEAR = 2024  # inclusivo
+END_YEAR = 2024
 
 # Valor de lookback para cálculo de mínimas/máximas
 LOOKBACK = 200
 
-# Quantidade de candles a serem carregados por backtest
+# Quantidade de candles por backtest
 CANDLE_LIMIT = 1000
 
-# Lista de criptomoedas
+# Lista de criptomoedas a testar
 CRYPTOS = [
-    "ETHUSDT",
-    "AVAXUSDT",
-    "ADAUSDT"
+    "INJUSDT", "NEARUSDT", "SUIUSDT", "UNIUSDT"
 ]
 
-# Caminho da pasta onde os arquivos XLSX de resultados serão salvos
+# Nome da exchange a ser utilizada
+EXCHANGE_NAME = "binance"
+
+# Pasta onde estão os arquivos XLSX de resultados gerados pelo core
 OUTPUT_FOLDER = "backtest"
-
-# Caminho da pasta onde o PDF consolidado será salvo
-OUTPUT_REPORT = "report"
-
-# Exchange ativa (apenas uma deve estar ativa por vez)
-EXCHANGE_NAME = "binance"  # opções: binance, coinbase, bybit, huobi
