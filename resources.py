@@ -8,6 +8,9 @@ END_YEAR = 2024  # inclusivo
 # Valor de lookback para cálculo de mínimas/máximas
 LOOKBACK = 200
 
+# Quantidade de candles a serem carregados por backtest
+CANDLE_LIMIT = 1000
+
 # Lista de criptomoedas
 CRYPTOS = [
     "ETHUSDT",
@@ -15,11 +18,11 @@ CRYPTOS = [
     "ADAUSDT"
 ]
 
-# Caminho da pasta onde os arquivos serão salvos
+# Caminho da pasta onde os arquivos XLSX de resultados serão salvos
 OUTPUT_FOLDER = "backtest"
 
-# Exchange ativa (apenas uma deve estar ativa por vez)
-EXCHANGE_NAME = "binance"  # opções: binance, coinbasepro, bybit, huobi
+# Caminho da pasta onde o PDF consolidado será salvo
+OUTPUT_REPORT = "report"
 
-# Quantidade de candles a serem carregados por backtest
-CANDLE_LIMIT = 1000
+# Exchange ativa (apenas uma deve estar ativa por vez)
+EXCHANGE_NAME = "binance"  # opções: binance, coinbase, bybit, huobi
