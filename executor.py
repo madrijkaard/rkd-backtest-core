@@ -7,8 +7,8 @@ from openpyxl.utils.dataframe import dataframe_to_rows
 from tqdm import tqdm
 
 from resources import TIMEFRAMES, START_YEAR, END_YEAR, LOOKBACK, CRYPTOS, OUTPUT_FOLDER
-from strategies.strategy_max_min import estrategia_max_min
-from exchanges import get_exchange
+from strategy.max_min_strategy import estrategia_max_min
+from exchange import get_exchange
 
 TIMEFRAME_TO_FREQ = {
     '15m': '15min',
