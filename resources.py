@@ -13,7 +13,7 @@ CANDLE_LIMIT = 1000
 
 # Lista de criptomoedas a testar
 CRYPTOS = [
-    "INJUSDT", "NEARUSDT", "SUIUSDT", "UNIUSDT"
+    "BTCUSDT", "ATOMUSDT", "MANAUSDT"
 ]
 
 # Nome da exchange a ser utilizada
