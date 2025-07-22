@@ -1,15 +1,28 @@
+# executor.py
+
 import os
 import glob
 import datetime
+import yaml
 import pandas as pd
 from openpyxl import Workbook
 from openpyxl.utils.dataframe import dataframe_to_rows
 from tqdm import tqdm
 
-from resources import TIMEFRAMES, START_YEAR, END_YEAR, LOOKBACK, CRYPTOS, OUTPUT_FOLDER
 from strategy.peaks_and_valleys import backtest_strategy
-from strategy.duplo_reteste import estrategia_duplo_reteste
 from exchange import get_exchange
+
+# 📥 Carregar configurações do YAML com encoding UTF-8
+with open("config.yaml", "r", encoding="utf-8") as f:
+    config = yaml.safe_load(f)
+
+TIMEFRAMES = config["timeframes"]
+START_YEAR = config["start_year"]
+END_YEAR = config["end_year"]
+LOOKBACK = config["lookback"]
+CANDLE_LIMIT = config["candle_limit"]
+CRYPTOS = config["cryptos"]
+OUTPUT_FOLDER = config["output_folder"]
 
 TIMEFRAME_TO_FREQ = {
     '15m': '15min',
@@ -19,6 +32,7 @@ TIMEFRAME_TO_FREQ = {
     '1d': '1d'
 }
 
+# 🔁 Função genérica de execução do backtest
 def run_backtest(exchange, symbol, timeframe_str, start_date, strategy_func, lookback: int, limit=1000):
     since = int(start_date.timestamp() * 1000)
     try:
@@ -41,10 +55,11 @@ def run_backtest(exchange, symbol, timeframe_str, start_date, strategy_func, loo
     stats["Date"] = start_date.strftime("%Y-%m-%d")
     return stats
 
+# ▶️ Executa backtest para todas as criptos e timeframes
 def run_for_all():
     os.makedirs(OUTPUT_FOLDER, exist_ok=True)
 
-    # Clean output folder
+    # Limpar a pasta de saída
     for f in glob.glob(os.path.join(OUTPUT_FOLDER, "*")):
         os.remove(f)
     print(f"\n🧹 Folder '{OUTPUT_FOLDER}' cleaned successfully.")
@@ -68,7 +83,8 @@ def run_for_all():
                     tf,
                     start_date,
                     strategy_func=backtest_strategy,
-                    lookback=LOOKBACK
+                    lookback=LOOKBACK,
+                    limit=CANDLE_LIMIT
                 )
                 if stats is not None:
                     results.append(stats)
@@ -87,5 +103,6 @@ def run_for_all():
         wb.save(file_path)
         print(f"\n✅ File saved: {file_path}")
 
+# 🚀 Execução principal
 if __name__ == "__main__":
     run_for_all()

@@ -1,0 +1,28 @@
+# config.yaml
+
+# 🕰️ Períodos gráficos utilizados no backtest
+timeframes:
+  - 15m
+  - 30m
+  - 1h
+  - 4h
+
+# 📅 Intervalo de anos para o backtest
+start_year: 2020
+end_year: 2024
+
+# 🔁 Lookback usado para cálculo de mínimas/máximas
+lookback: 200
+
+# 🔢 Quantidade de candles por backtest
+candle_limit: 1000
+
+# 🪙 Lista de criptomoedas a testar
+cryptos:
+  - BTCUSDT
+
+# 🏦 Nome da exchange a ser utilizada
+exchange_name: binance
+
+# 📁 Pasta onde serão salvos os arquivos de resultado
+output_folder: backtest
