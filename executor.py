@@ -24,12 +24,18 @@ CANDLE_LIMIT = config["candle_limit"]
 CRYPTOS = config["cryptos"]
 OUTPUT_FOLDER = config["output_folder"]
 
+# 🕒 Mapeamento de timeframe do ccxt para frequência do Pandas
 TIMEFRAME_TO_FREQ = {
     '15m': '15min',
     '30m': '30min',
-    '1h': '1h',
-    '4h': '4h',
-    '1d': '1d'
+    '1h': '1h'
+}
+
+# 📊 Quantidade ideal de candles por mês para cada timeframe
+TIMEFRAME_CANDLES_PER_MONTH = {
+    '15m': 1000,   # ~2880 candles/mês, limitado a 1000
+    '30m': 1000,   # ~1440 candles/mês, limitado a 1000
+    '1h': 720,     # 24h x 30 dias
 }
 
 # 🔁 Função genérica de execução do backtest
@@ -76,6 +82,8 @@ def run_for_all():
 
         for tf in TIMEFRAMES:
             results = []
+            limit_for_tf = TIMEFRAME_CANDLES_PER_MONTH.get(tf, CANDLE_LIMIT)
+
             for start_date in tqdm(dates, desc=f"{symbol} {tf}", unit="month"):
                 stats = run_backtest(
                     exchange,
@@ -84,7 +92,7 @@ def run_for_all():
                     start_date,
                     strategy_func=backtest_strategy,
                     lookback=LOOKBACK,
-                    limit=CANDLE_LIMIT
+                    limit=limit_for_tf
                 )
                 if stats is not None:
                     results.append(stats)
