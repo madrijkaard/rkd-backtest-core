@@ -29,3 +29,5 @@ if [ -f "requirements.txt" ]; then
 else
     echo "⚠️  Nenhum arquivo requirements.txt encontrado. Ignorando instalação de dependências."
 fi
+
+python executor.py
