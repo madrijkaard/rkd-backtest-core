@@ -44,7 +44,7 @@ def run_backtest(exchange, symbol, timeframe_str, start_date, strategy_func, loo
     try:
         ohlcv = exchange.fetch_ohlcv(symbol, timeframe=timeframe_str, since=since, limit=limit)
     except Exception as e:
-        print(f"❌ Error in {symbol} {timeframe_str} {start_date.date()}: {e}")
+        print(f"❌ Erro ao buscar dados de {symbol} {timeframe_str} {start_date.date()}: {e}")
         return None
 
     df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
@@ -56,10 +56,14 @@ def run_backtest(exchange, symbol, timeframe_str, start_date, strategy_func, loo
         return None
 
     freq = TIMEFRAME_TO_FREQ.get(timeframe_str, None)
-    pf = strategy_func(close, lookback, freq=freq)
-    stats = pf.stats()
-    stats["Date"] = start_date.strftime("%Y-%m-%d")
-    return stats
+    try:
+        pf = strategy_func(close, lookback, freq=freq)
+        stats = pf.stats()
+        stats["Date"] = start_date.strftime("%Y-%m-%d")
+        return stats
+    except Exception as e:
+        print(f"❌ Erro ao executar backtest para {symbol} {timeframe_str} {start_date.date()}: {e}")
+        return None
 
 # ▶️ Executa backtest para todas as criptos e timeframes
 def run_for_all():
@@ -68,7 +72,7 @@ def run_for_all():
     # Limpar a pasta de saída
     for f in glob.glob(os.path.join(OUTPUT_FOLDER, "*")):
         os.remove(f)
-    print(f"\n🧹 Folder '{OUTPUT_FOLDER}' cleaned successfully.")
+    print(f"\n🧹 Pasta '{OUTPUT_FOLDER}' limpa com sucesso.")
 
     exchange = get_exchange()
     dates = [datetime.datetime(year, month, 1)
@@ -76,7 +80,7 @@ def run_for_all():
              for month in range(1, 13)]
 
     for symbol in CRYPTOS:
-        print(f"\n🔍 Processing {symbol}...")
+        print(f"\n🔍 Processando {symbol}...")
         wb = Workbook()
         wb.remove(wb.active)
 
@@ -84,7 +88,7 @@ def run_for_all():
             results = []
             limit_for_tf = TIMEFRAME_CANDLES_PER_MONTH.get(tf, CANDLE_LIMIT)
 
-            for start_date in tqdm(dates, desc=f"{symbol} {tf}", unit="month"):
+            for start_date in tqdm(dates, desc=f"{symbol} {tf}", unit="mês"):
                 stats = run_backtest(
                     exchange,
                     symbol.replace("USDT", "/USDT"),
@@ -98,7 +102,7 @@ def run_for_all():
                     results.append(stats)
 
             if not results:
-                print(f"\n⚠ Not enough data for {symbol} {tf}")
+                print(f"\n⚠ Dados insuficientes para {symbol} {tf}")
                 continue
 
             df = pd.DataFrame(results)
@@ -109,8 +113,13 @@ def run_for_all():
 
         file_path = os.path.join(OUTPUT_FOLDER, f"{symbol}.xlsx")
         wb.save(file_path)
-        print(f"\n✅ File saved: {file_path}")
+        print(f"\n✅ Arquivo salvo: {file_path}")
+
 
 # 🚀 Execução principal
 if __name__ == "__main__":
-    run_for_all()
+    try:
+        run_for_all()
+    except Exception as e:
+        print(f"\n❌ Erro inesperado: {e}")
+    input("\n✅ Execução finalizada. Pressione Enter para sair...")

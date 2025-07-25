@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import vectorbt as vbt
 
-from strategy.strategy import Estrategia, Compra, Venda
+from strategy.strategy import Estrategia
 
 
 # ----------- CÁLCULO DAS ZONAS LOGARÍTMICAS ----------- #
@@ -30,75 +30,131 @@ def calculate_log_zones(row: pd.Series) -> pd.Series:
     ], index=[f'line_{i}' for i in range(1, 10)])
 
 
-# ----------- NOVA ESTRATÉGIA COM FLAGS ----------- #
+# ----------- ESTRATÉGIA COMBINADA SHORT E LONG ----------- #
 class PeaksAndValleysStrategy(Estrategia):
     def executar(self, close: pd.Series, zonas_df: pd.DataFrame, freq: str) -> vbt.Portfolio:
-        entries = pd.Series(False, index=zonas_df.index)
+        entries = pd.Series(np.nan, index=zonas_df.index)
         exits = pd.Series(False, index=zonas_df.index)
-        position_size = pd.Series(0.0, index=zonas_df.index)
 
         is_in_position = False
         preco_entrada = None
+        direcao = None  # 'short' ou 'long'
 
-        flag_1_ativa = False
-        flag_2_ativa = False
+        stop_losses_consecutivos = 0
+        ganhos_consecutivos = 0
+        mes_atual = None
+        ignorar_mes = False
+
+        # SHORT: linha_8 → linha_6
+        aguardando_linha_6 = False
+        sequencias_completas = 0
+
+        # LONG: 3x (linha_1 → linha_4)
+        long_etapa = 0  # contador de etapas alternadas
 
         for i in range(len(zonas_df)):
             index = zonas_df.index[i]
             preco = close.loc[index]
             zonas = zonas_df.iloc[i]
+            mes = index.to_period("M")
 
-            # → 1. Ativa flag_1 se tocar a linha 1
-            if not is_in_position and preco <= zonas['line_1']:
-                flag_1_ativa = True
+            # Novo mês
+            if mes != mes_atual:
+                mes_atual = mes
+                stop_losses_consecutivos = 0
+                ganhos_consecutivos = 0
+                ignorar_mes = False
+                aguardando_linha_6 = False
+                sequencias_completas = 0
+                long_etapa = 0
 
-            # → 2. Compra 1x se flag_1 ativa e preço toca linha 4
-            if not is_in_position and flag_1_ativa and preco >= zonas['line_4']:
-                entries.loc[index] = True
-                position_size.loc[index] = 1.0
-                is_in_position = True
-                preco_entrada = preco
+            if ignorar_mes:
                 continue
 
-            # → 3. Stop da compra normal, ativa flag_2
-            if is_in_position and flag_1_ativa and preco <= zonas['line_2']:
-                exits.loc[index] = True
-                is_in_position = False
-                preco_entrada = None
-                flag_1_ativa = False
-                flag_2_ativa = True
-                continue
+            # ---------- ENTRADA SHORT ----------
+            if not is_in_position:
+                if not aguardando_linha_6 and preco >= zonas['line_8']:
+                    aguardando_linha_6 = True
+                    continue
 
-            # → 4. Compra 10x se flag_2 ativa e preço toca linha 4
-            if not is_in_position and flag_2_ativa and preco >= zonas['line_4']:
-                entries.loc[index] = True
-                position_size.loc[index] = 10.0
-                is_in_position = True
-                preco_entrada = preco
-                continue
+                if aguardando_linha_6 and preco <= zonas['line_6']:
+                    sequencias_completas += 1
+                    aguardando_linha_6 = False
 
-            # → 5. Stop da compra alavancada, desativa flag_2
-            if is_in_position and flag_2_ativa and preco <= zonas['line_2']:
-                exits.loc[index] = True
-                is_in_position = False
-                preco_entrada = None
-                flag_2_ativa = False
-                continue
+                    if sequencias_completas == 3:
+                        entries.loc[index] = -1
+                        is_in_position = True
+                        preco_entrada = preco
+                        direcao = 'short'
+                        sequencias_completas = 0
+                        continue
 
-            # → 6. Take profit se tocar linha 8, zera tudo
-            if is_in_position and preco >= zonas['line_8']:
-                exits.loc[index] = True
-                is_in_position = False
-                preco_entrada = None
-                flag_1_ativa = False
-                flag_2_ativa = False
-                continue
+            # ---------- ENTRADA LONG (linha_1 → linha_4) ----------
+            if not is_in_position:
+                if long_etapa % 2 == 0 and preco <= zonas['line_1']:
+                    long_etapa += 1
+                    continue
+                if long_etapa % 2 == 1 and preco >= zonas['line_4']:
+                    long_etapa += 1
+                    if long_etapa == 6:
+                        entries.loc[index] = 1
+                        is_in_position = True
+                        preco_entrada = preco
+                        direcao = 'long'
+                        long_etapa = 0
+                        continue
+
+            # ---------- EXIT SHORT ----------
+            if is_in_position and direcao == 'short':
+                if preco >= zonas['line_8']:  # stop loss
+                    exits.loc[index] = True
+                    is_in_position = False
+                    preco_entrada = None
+                    direcao = None
+                    aguardando_linha_6 = False
+                    sequencias_completas = 0
+                    stop_losses_consecutivos += 1
+                    ganhos_consecutivos = 0
+                    if stop_losses_consecutivos >= 2:
+                        ignorar_mes = True
+                    continue
+
+                if preco <= zonas['line_3']:  # take profit
+                    exits.loc[index] = True
+                    is_in_position = False
+                    preco_entrada = None
+                    direcao = None
+                    aguardando_linha_6 = False
+                    sequencias_completas = 0
+                    stop_losses_consecutivos = 0
+                    ganhos_consecutivos += 1
+                    if ganhos_consecutivos >= 2:
+                        ignorar_mes = True
+                    continue
+
+            # ---------- EXIT LONG ----------
+            if is_in_position and direcao == 'long':
+                if preco <= zonas['line_1']:  # stop loss
+                    exits.loc[index] = True
+                    is_in_position = False
+                    preco_entrada = None
+                    direcao = None
+                    long_etapa = 0
+                    continue
+
+                if preco >= zonas['line_7']:  # take profit
+                    exits.loc[index] = True
+                    is_in_position = False
+                    preco_entrada = None
+                    direcao = None
+                    long_etapa = 0
+                    continue
 
         return vbt.Portfolio.from_signals(
             close.loc[zonas_df.index],
-            entries,
-            exits,
-            size=position_size,
+            entries=entries,
+            exits=exits,
+            direction='both',
             fees=0.001,
             slippage=0.001,
             freq=freq
