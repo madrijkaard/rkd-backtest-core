@@ -1,10 +1,21 @@
-# 🧠 Crypto Backtester with Modular Strategies
+# 🧠 Crypto Backtester – Modular Strategies with Logarithmic Zones
 
 ![Python](https://img.shields.io/badge/Python-3.10+-blue?style=flat-square&logo=python)
 ![VectorBT](https://img.shields.io/badge/VectorBT-Powered-orange?style=flat-square)
 ![License](https://img.shields.io/badge/license-MIT-green?style=flat-square)
 
-> Backtesting system for cryptocurrencies using **logarithmic highs and lows**, with pluggable modular strategy support. Results are automatically exported to Excel spreadsheets. 🚀
+Backtesting system for cryptocurrencies focused on strategies using **logarithmic price zones**. Supports multiple exchanges via CCXT, multiple timeframes, and automatic export of results to Excel spreadsheets.
+
+---
+
+## ⚙️ Technologies Used
+
+- **[Python 3.10+](https://www.python.org/)**  
+- **[CCXT](https://github.com/ccxt/ccxt)** – For historical data from exchanges  
+- **[VectorBT](https://vectorbt.dev/)** – Backtesting, performance metrics, and portfolio simulation  
+- **[Pandas](https://pandas.pydata.org/)** + **[NumPy](https://numpy.org/)**  
+- **[OpenPyXL](https://openpyxl.readthedocs.io/)** – Excel spreadsheet generation  
+- **[TQDM](https://tqdm.github.io/)** – Terminal progress bar  
 
 ---
 
@@ -12,141 +23,138 @@
 
 ```
 .
-├── executor.py              # Main script to run the backtests
-├── resources.py             # Global configuration file
-├── exchanges.py             # Exchange selector using ccxt
-├── strategies/              # Directory for all strategies
-│   └── strategy_max_min.py  # Logarithmic high/low zone strategy
-└── backtest/                # (generated) Excel files with results
+├── config.yaml                  # Configuration file with backtest parameters
+├── exchange.py                 # Selects exchange via CCXT
+├── executor.py                 # Main script to run the backtest
+├── strategy/
+│   ├── strategy.py             # Abstract base strategy and trade structure
+│   └── peaks_and_valleys.py    # Logarithmic zone strategy
+├── requirements.txt            # Project dependencies
+├── venv.sh                     # Script to activate virtual environment and run the project
+└── backtest/                   # (generated) Folder with Excel result files
 ```
 
----
+### File Descriptions
 
-## ⚙️ Technologies Used
-
-- [Python 3.10+](https://www.python.org/)
-- [CCXT](https://github.com/ccxt/ccxt) – for historical market data
-- [VectorBT](https://vectorbt.dev/) – backtesting and performance metrics
-- [Pandas + NumPy](https://pandas.pydata.org/)
-- [OpenPyXL](https://openpyxl.readthedocs.io/) – Excel export
-- [TQDM](https://tqdm.github.io/) – visual progress bar
+- **`config.yaml`**: Defines cryptos, timeframes, lookback window, exchange, and other settings.  
+- **`exchange.py`**: Loads the chosen exchange and instantiates a `ccxt` client.  
+- **`executor.py`**: Controls the entire execution flow. Iterates dates, applies strategy, exports results.  
+- **`strategy/peaks_and_valleys.py`**: Main strategy using logarithmic zones.  
+- **`venv.sh`**: Automates environment activation, dependency installation, and execution.  
 
 ---
 
-## 🔁 Supported Exchanges
+## ▶️ How to Run the Project
 
-You can choose from the following exchanges, defined in `resources.py`:
-
-```python
-EXCHANGE_NAME = "binance"  # Options: binance, coinbase, bybit, huobi
-```
-
-This is handled internally via the `get_exchange()` function in [`exchanges.py`](./exchanges.py), which returns a `ccxt` client instance accordingly.
-
----
-
-## 🧪 Execution
-
-### ▶️ Install dependencies
+### 1. Clone the Repository
 
 ```bash
-pip install ccxt pandas numpy vectorbt openpyxl tqdm
+git clone https://github.com/yourusername/crypto-backtester.git
+cd crypto-backtester
 ```
 
-### ▶️ Run the backtest
+### 2. Configure `config.yaml`
+
+Example content:
+
+```yaml
+exchange_name: binance
+output_folder: backtest
+start_year: 2021
+end_year: 2024
+lookback: 200
+candle_limit: 1000
+timeframes: ["15m", "1h"]
+cryptos: ["ETHUSDT", "AVAXUSDT"]
+```
+
+### 3. Run the `venv.sh` Script
+
+Use the command below to activate the virtual environment and automatically execute the project:
 
 ```bash
-python executor.py
+source venv.sh
 ```
 
-> Excel files will be saved to the `backtest/` folder (or as configured in `resources.py`).
+> 💡 **Important:** The script must be executed with `source` to work correctly.
 
 ---
 
-## ⚙️ Configuration (`resources.py`)
+## 📄 Output Example
 
-You can customize the behavior of the backtest here:
+After execution, `.xlsx` files will be saved in `backtest/`, containing:
 
-```python
-TIMEFRAMES = ['15m', '1h', '4h']          # Timeframes to test
-START_YEAR = 2020                         # Start of backtest period
-END_YEAR = 2024                           # End of backtest period
-LOOKBACK = 200                            # Window for rolling min/max zones
-CANDLE_LIMIT = 1000                       # Number of candles fetched per test
-CRYPTOS = ["ETHUSDT", "AVAXUSDT", "ADAUSDT"]
-OUTPUT_FOLDER = "backtest"
-EXCHANGE_NAME = "binance"
-```
+- One tab per timeframe tested (e.g., `15m`, `1h`, etc.)
+- One row per analyzed month
+- Metrics calculated by `VectorBT`
 
 ---
 
-## 🕰️ How Timeframes & Candle Count Work
+## 💡 Strategy: Peaks and Valleys
 
-Each backtest pulls `CANDLE_LIMIT` candles for a given month/start date and timeframe.
+The `PeaksAndValleys` strategy uses price zones calculated via logarithmic transformations of the **rolling min and max** over a window (`lookback`). It includes rules such as:
 
-Here’s what `CANDLE_LIMIT = 1000` means in terms of historical data:
-
-| Timeframe | Duration Covered       |
-|-----------|------------------------|
-| `15m`     | ~10.4 days of data     |
-| `30m`     | ~20.8 days of data     |
-| `1h`      | ~41.6 days of data     |
-| `4h`      | ~166.6 days (~5.5 mo)  |
-| `1d`      | ~1000 days (~2.7 years)|
-
-From these 1000 candles:
-- The first `LOOKBACK` candles (e.g. 200) are used to calculate dynamic price zones.
-- The remaining candles are used to simulate entries/exits and compute portfolio stats.
-- If the timeframe doesn’t provide enough candles, that test is skipped.
-
-You can adjust `CANDLE_LIMIT` to increase or reduce the analysis window as needed.
+- LONG entry after 3 alternating `line_1 → line_4` cycles  
+- SHORT entry after 3 `line_8 → line_6` sequences  
+- Stop loss and take profit exits  
+- Logic reset each month  
+- Ignore month after 2 consecutive wins or losses  
 
 ---
 
 ## 📈 Adding New Strategies
 
-1. Create a new file in `strategies/`, e.g. `strategy_crossover.py`
-2. Define a function matching this format:
+1. Create a new file in `strategy/`, e.g. `my_strategy.py`  
+2. Define a function with the signature:
 
 ```python
 def my_strategy(close: pd.Series, lookback: int, freq: str) -> vbt.Portfolio:
     ...
 ```
 
-3. Import and use it in `executor.py`:
+3. In `executor.py`, import and replace the strategy function:
 
 ```python
-from strategies.strategy_crossover import my_strategy
+from strategy.my_strategy import my_strategy
 
-# Replace estrategia_func=estrategia_max_min with:
-estrategia_func=my_strategy
+# Replace:
+# strategy_func=backtest_strategy
+# With:
+strategy_func=my_strategy
 ```
 
 ---
 
-## 📸 Output Example
+## 🧪 Understanding CANDLE_LIMIT
 
-<p align="center">
-  <img src="https://user-images.githubusercontent.com/placeholder/backtest_example.png" width="600" alt="Excel output preview">
-</p>
+Each month, the script fetches `CANDLE_LIMIT` candles for the given timeframe:
 
-Each Excel file will have one tab per timeframe tested (e.g., 15m, 1h, 4h) for a specific symbol.
+| Timeframe | Coverage with 1000 candles |
+|-----------|-----------------------------|
+| `15m`     | ~10 days                    |
+| `1h`      | ~41 days                    |
+| `4h`      | ~166 days (~5.5 months)     |
+| `1d`      | ~2.7 years                  |
+
+- The first `LOOKBACK` candles are used to compute zones.
+- The rest is used to simulate trades and evaluate performance.
+- If there aren’t enough candles, the month is skipped.
 
 ---
 
-## 📌 To-do
+## 📌 Future Improvements
 
 - [ ] Add more exchanges (KuCoin, OKX, etc.)
-- [ ] Generate charts automatically with `vectorbt.plot()`
-- [ ] Use `ThreadPoolExecutor` to parallelize execution
-- [ ] Add web interface for uploading/running strategies
-- [ ] Persist OHLCV cache locally to reduce API calls
+- [ ] Parallel execution using `ThreadPoolExecutor`
+- [ ] Export charts with `vectorbt.plot()`
+- [ ] Cache OHLCV data locally to reduce API calls
+- [ ] Web interface for uploading and running strategies
 
 ---
 
 ## 📄 License
 
-This project is licensed under the [MIT License](LICENSE).
+Distributed under the [MIT License](LICENSE).
 
 ---
 
