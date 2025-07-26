@@ -1,33 +1,51 @@
 #!/bin/bash
 set -e
 
-# Verifica se foi executado com 'source'
+# Check if the script is sourced
 (return 0 2>/dev/null) || {
-    echo "⚠️  Este script deve ser executado com 'source venv.sh' para funcionar corretamente."
+    echo "⚠️  This script must be executed using 'source venv.sh' to work correctly."
     exit 1
 }
 
-# Cria o ambiente virtual se ainda não existir
+# Create virtual environment if it doesn't exist
 if [ ! -d "venv" ]; then
-    echo "📦 Criando o ambiente virtual..."
+    echo "📦 Creating virtual environment..."
     py -m venv venv
 fi
 
-# Ativa o ambiente virtual
-echo "🐍 Ativando o ambiente virtual..."
+# Activate virtual environment
+echo "🐍 Activating virtual environment..."
 if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "win32" ]]; then
     source venv/Scripts/activate
 else
     source venv/bin/activate
 fi
 
-# Instala dependências se requirements.txt existir
+# Install dependencies from requirements.txt line by line
 if [ -f "requirements.txt" ]; then
-    echo "📄 requirements.txt encontrado. Instalando dependências..."
+    echo "📄 requirements.txt found. Installing dependencies..."
     pip install --upgrade pip
-    pip install --upgrade -r requirements.txt
+
+    mapfile -t packages < requirements.txt
+    total=${#packages[@]}
+    count=0
+
+    for pkg in "${packages[@]}"; do
+        count=$((count + 1))
+        percent=$((count * 100 / total))
+        filled=$((percent / 5))  # 20-block progress bar
+        empty=$((20 - filled))
+        bar=$(printf "%0.s█" $(seq 1 $filled))
+        bar+=$(printf "%0.s " $(seq 1 $empty))
+        echo -ne "\r🔄 [$bar] $count/$total: $pkg"
+        pip install "$pkg" 2>/dev/null | grep -v "Requirement already satisfied" || true
+    done
+
+    echo -e "\n✅ Dependency installation complete!"
 else
-    echo "⚠️  Nenhum arquivo requirements.txt encontrado. Ignorando instalação de dependências."
+    echo "⚠️  No requirements.txt found. Skipping dependency installation."
 fi
 
+# Run the main script
+echo "🚀 Running executor.py..."
 python executor.py
