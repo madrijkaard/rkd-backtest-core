@@ -6,7 +6,7 @@ timeframes:
 
 # 📅 Intervalo de anos para o backtest
 start_year: 2018
-end_year: 2024
+end_year: 2025
 
 # 🔁 Lookback usado para cálculo de mínimas/máximas
 lookback: 200
