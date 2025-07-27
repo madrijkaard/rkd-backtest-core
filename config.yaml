@@ -5,7 +5,7 @@ timeframes:
   - 15m
 
 # 📅 Intervalo de anos para o backtest
-start_year: 2020
+start_year: 2018
 end_year: 2024
 
 # 🔁 Lookback usado para cálculo de mínimas/máximas
@@ -17,10 +17,6 @@ candle_limit: 1000
 # 🪙 Lista de criptomoedas a testar
 cryptos:
   - BTCUSDT
-  - ETHUSDT
-  - AVAXUSDT
-  - LINKUSDT
-  - MANAUSDT
 
 # 🏦 Nome da exchange a ser utilizada
 exchange_name: binance
