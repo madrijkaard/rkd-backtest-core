@@ -30,7 +30,7 @@ def calculate_log_zones(row: pd.Series) -> pd.Series:
     ], index=[f'line_{i}' for i in range(1, 10)])
 
 
-# ----------- ESTRATÉGIA COMBINADA SHORT E LONG ----------- #
+# ----------- ESTRATÉGIA APENAS SHORT ----------- #
 class PeaksAndValleysStrategy(Estrategia):
     def executar(self, close: pd.Series, zonas_df: pd.DataFrame, freq: str) -> vbt.Portfolio:
         entries = pd.Series(np.nan, index=zonas_df.index)
@@ -38,19 +38,14 @@ class PeaksAndValleysStrategy(Estrategia):
 
         is_in_position = False
         preco_entrada = None
-        direcao = None  # 'short' ou 'long'
 
         stop_losses_consecutivos = 0
         ganhos_consecutivos = 0
         mes_atual = None
         ignorar_mes = False
 
-        # SHORT: linha_8 → linha_6
         aguardando_linha_6 = False
         sequencias_completas = 0
-
-        # LONG: 3x (linha_1 → linha_4)
-        long_etapa = 0  # contador de etapas alternadas
 
         for i in range(len(zonas_df)):
             index = zonas_df.index[i]
@@ -66,7 +61,6 @@ class PeaksAndValleysStrategy(Estrategia):
                 ignorar_mes = False
                 aguardando_linha_6 = False
                 sequencias_completas = 0
-                long_etapa = 0
 
             if ignorar_mes:
                 continue
@@ -85,32 +79,15 @@ class PeaksAndValleysStrategy(Estrategia):
                         entries.loc[index] = -1
                         is_in_position = True
                         preco_entrada = preco
-                        direcao = 'short'
                         sequencias_completas = 0
                         continue
 
-            # ---------- ENTRADA LONG (linha_1 → linha_4) ----------
-            if not is_in_position:
-                if long_etapa % 2 == 0 and preco <= zonas['line_1']:
-                    long_etapa += 1
-                    continue
-                if long_etapa % 2 == 1 and preco >= zonas['line_4']:
-                    long_etapa += 1
-                    if long_etapa == 6:
-                        entries.loc[index] = 1
-                        is_in_position = True
-                        preco_entrada = preco
-                        direcao = 'long'
-                        long_etapa = 0
-                        continue
-
             # ---------- EXIT SHORT ----------
-            if is_in_position and direcao == 'short':
+            if is_in_position:
                 if preco >= zonas['line_8']:  # stop loss
                     exits.loc[index] = True
                     is_in_position = False
                     preco_entrada = None
-                    direcao = None
                     aguardando_linha_6 = False
                     sequencias_completas = 0
                     stop_losses_consecutivos += 1
@@ -123,31 +100,12 @@ class PeaksAndValleysStrategy(Estrategia):
                     exits.loc[index] = True
                     is_in_position = False
                     preco_entrada = None
-                    direcao = None
                     aguardando_linha_6 = False
                     sequencias_completas = 0
                     stop_losses_consecutivos = 0
                     ganhos_consecutivos += 1
                     if ganhos_consecutivos >= 2:
                         ignorar_mes = True
-                    continue
-
-            # ---------- EXIT LONG ----------
-            if is_in_position and direcao == 'long':
-                if preco <= zonas['line_1']:  # stop loss
-                    exits.loc[index] = True
-                    is_in_position = False
-                    preco_entrada = None
-                    direcao = None
-                    long_etapa = 0
-                    continue
-
-                if preco >= zonas['line_7']:  # take profit
-                    exits.loc[index] = True
-                    is_in_position = False
-                    preco_entrada = None
-                    direcao = None
-                    long_etapa = 0
                     continue
 
         return vbt.Portfolio.from_signals(
