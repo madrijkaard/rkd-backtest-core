@@ -30,7 +30,7 @@ def calculate_log_zones(row: pd.Series) -> pd.Series:
     ], index=[f'line_{i}' for i in range(1, 10)])
 
 
-# ----------- ESTRATÉGIA APENAS SHORT ----------- #
+# ----------- ESTRATÉGIA APENAS SHORT SEM ALAVANCAGEM ----------- #
 class PeaksAndValleysStrategy(Estrategia):
     def executar(self, close: pd.Series, zonas_df: pd.DataFrame, freq: str) -> vbt.Portfolio:
         entries = pd.Series(np.nan, index=zonas_df.index)
@@ -76,7 +76,7 @@ class PeaksAndValleysStrategy(Estrategia):
                     aguardando_linha_6 = False
 
                     if sequencias_completas == 3:
-                        entries.loc[index] = -1
+                        entries.loc[index] = -1  # Short com 1x
                         is_in_position = True
                         preco_entrada = preco
                         sequencias_completas = 0
@@ -112,10 +112,10 @@ class PeaksAndValleysStrategy(Estrategia):
             close.loc[zonas_df.index],
             entries=entries,
             exits=exits,
-            direction='both',
             fees=0.001,
             slippage=0.001,
             freq=freq
+            # Sem 'size': assume tamanho 1x por padrão
         )
 
 
