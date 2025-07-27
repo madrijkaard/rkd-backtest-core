@@ -1,41 +1,43 @@
+# strategy.py
+
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 import pandas as pd
 import vectorbt as vbt
 
-# ----------- CONTRATO DE CONDIÇÃO -----------
-class Condicao(ABC):
+# ----------- CONDITION CONTRACT -----------
+class Condition(ABC):
     @abstractmethod
-    def avaliar(self, zonas: pd.Series, preco: float) -> bool:
+    def evaluate(self, zones: pd.Series, price: float) -> bool:
         pass
 
 
-# ----------- CLASSES BASE DE COMPRA E VENDA -----------
+# ----------- BASE CLASSES FOR BUY AND SELL -----------
 @dataclass
-class Compra(Condicao):
+class Buy(Condition):
     pass
 
 
 @dataclass
-class Venda(Condicao):
+class Sell(Condition):
     pass
 
 
-# ----------- TRADE GENÉRICO -----------
+# ----------- GENERIC TRADE -----------
 @dataclass
 class Trade:
-    compra: Compra
-    venda: Venda
-    ativo: bool = False
-    tamanho: float = 0.0
+    buy: Buy
+    sell: Sell
+    active: bool = False
+    size: float = 0.0
 
 
-# ----------- ESTRATÉGIA BASE ABSTRATA -----------
-class Estrategia(ABC):
+# ----------- ABSTRACT BASE STRATEGY -----------
+class Strategy(ABC):
     def __init__(self):
         self.trades: list[Trade] = []
-        self.em_posicao: bool = False
+        self.in_position: bool = False
 
     @abstractmethod
-    def executar(self, close: pd.Series, zonas_df: pd.DataFrame) -> vbt.Portfolio:
+    def execute(self, close: pd.Series, zones_df: pd.DataFrame) -> vbt.Portfolio:
         pass
