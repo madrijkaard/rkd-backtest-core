@@ -1,5 +1,3 @@
-# strategy.py
-
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 import pandas as pd
@@ -12,22 +10,22 @@ class Condition(ABC):
         pass
 
 
-# ----------- BASE CLASSES FOR BUY AND SELL -----------
+# ----------- BASE CLASSES FOR IN AND OUT -----------
 @dataclass
-class Buy(Condition):
+class In(Condition):
     pass
 
 
 @dataclass
-class Sell(Condition):
+class Out(Condition):
     pass
 
 
 # ----------- GENERIC TRADE -----------
 @dataclass
 class Trade:
-    buy: Buy
-    sell: Sell
+    entry: In
+    exit: Out
     active: bool = False
     size: float = 0.0
 
@@ -39,5 +37,5 @@ class Strategy(ABC):
         self.in_position: bool = False
 
     @abstractmethod
-    def execute(self, close: pd.Series, zones_df: pd.DataFrame) -> vbt.Portfolio:
+    def execute(self, close: pd.Series, zones_df: pd.DataFrame, freq: str) -> vbt.Portfolio:
         pass
