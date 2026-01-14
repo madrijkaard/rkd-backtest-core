@@ -1,125 +1,221 @@
 # executor.py
 
 import os
-import glob
-import datetime
+import sys
 import yaml
 import pandas as pd
-from openpyxl import Workbook
-from openpyxl.utils.dataframe import dataframe_to_rows
-from tqdm import tqdm
-
-from strategy.peaks_and_valleys import backtest_strategy
+import numpy as np
+import vectorbt as vbt
+from datetime import datetime, timezone
+from pandas.api.types import is_datetime64tz_dtype
 from exchange import get_exchange
+from strategy.log_zones_activity import backtest_strategy
 
-# 📥 Load YAML configuration with UTF-8 encoding
-with open("config.yaml", "r", encoding="utf-8") as f:
+# =========================================================
+# LOAD CONFIG
+# =========================================================
+CONFIG_PATH = os.path.join(os.path.dirname(__file__), "config.yaml")
+with open(CONFIG_PATH, "r", encoding="utf-8") as f:
     config = yaml.safe_load(f)
 
+EXCHANGE_NAME = config["exchange"]["name"].lower()
+MARKET_TYPE = config["exchange"].get("market", "spot").lower()
+SYMBOLS = config["symbols"]
 TIMEFRAMES = config["timeframes"]
-START_YEAR = config["start_year"]
-END_YEAR = config["end_year"]
-LOOKBACK = config["lookback"]
-CANDLE_LIMIT = config["candle_limit"]
-CRYPTOS = config["cryptos"]
-OUTPUT_FOLDER = config["output_folder"]
+LOOKBACK = config["strategy"]["lookback_candles"]
+INITIAL_BALANCE = config["execution"].get("initial_balance", 1000)
+FEE_PERCENTAGE = config["execution"].get("fee_percentage", 0.0)
+SLIPPAGE = config["execution"].get("slippage", 0.0)
 
-# 🕒 Map ccxt timeframes to Pandas frequency strings
-TIMEFRAME_TO_FREQ = {
-    '15m': '15min',
-    '30m': '30min',
-    '1h': '1h'
-}
+date_cfg = config["date_range"]
+START_DATE = f"{date_cfg['start_year']}-{date_cfg['start_month']:02d}-01"
+END_DATE = f"{date_cfg['end_year']}-{date_cfg['end_month']:02d}-28"
 
-# 📊 Ideal number of candles per month for each timeframe
-TIMEFRAME_CANDLES_PER_MONTH = {
-    '15m': 1000,   # ~2880 candles/month, limited to 1000
-    '30m': 1000,   # ~1440 candles/month, limited to 1000
-    '1h': 720,     # 24h x 30 days
-}
+OUTPUT_FOLDER = config["output"]["folder"]
+OUTPUT_FILE = os.path.join(OUTPUT_FOLDER, "results_log_zones.xlsx")
+OUTPUT_SIGNALS = os.path.join(OUTPUT_FOLDER, "signals_log_zones.xlsx")
+os.makedirs(OUTPUT_FOLDER, exist_ok=True)
 
-# 🔁 Generic backtest execution function
-def run_backtest(exchange, symbol, timeframe_str, start_date, strategy_func, lookback: int, limit=1000):
-    since = int(start_date.timestamp() * 1000)
-    try:
-        ohlcv = exchange.fetch_ohlcv(symbol, timeframe=timeframe_str, since=since, limit=limit)
-    except Exception as e:
-        print(f"❌ Error fetching data for {symbol} {timeframe_str} {start_date.date()}: {e}")
-        return None
+# =========================================================
+# EXCHANGE
+# =========================================================
+exchange = get_exchange()
 
-    df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
-    df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
-    df.set_index('timestamp', inplace=True)
-    close = df['close']
+# =========================================================
+# PROGRESS BAR
+# =========================================================
+def print_progress_bar(current, total, prefix="", length=30):
+    """
+    Prints a progress bar in the terminal.
+    """
+    if total <= 0:
+        return
+    percent = int((current / total) * 100)
+    filled = int(length * current // total)
+    bar = "█" * filled + "░" * (length - filled)
+    sys.stdout.write(f"\r{prefix} [{bar}] {percent}%")
+    sys.stdout.flush()
+    if current == total:
+        print()
 
-    if len(close) < lookback:
-        return None
+# =========================================================
+# FETCH OHLCV
+# =========================================================
+def fetch_ohlcv(symbol: str, timeframe: str) -> pd.DataFrame:
+    """
+    Fetch OHLCV data from the exchange using CCXT.
+    Handles limits and date ranges.
+    """
+    # Adjust symbol for Binance Futures
+    symbol_ccxt = symbol.replace("/", "")
 
-    freq = TIMEFRAME_TO_FREQ.get(timeframe_str, None)
-    try:
-        pf = strategy_func(close, lookback, freq=freq)
-        stats = pf.stats()
-        stats["Date"] = start_date.strftime("%Y-%m-%d")
-        return stats
-    except Exception as e:
-        print(f"❌ Error running backtest for {symbol} {timeframe_str} {start_date.date()}: {e}")
-        return None
+    since = int(
+        datetime.fromisoformat(START_DATE)
+        .replace(tzinfo=timezone.utc)
+        .timestamp() * 1000
+    )
+    end_ts = int(
+        datetime.fromisoformat(END_DATE)
+        .replace(tzinfo=timezone.utc)
+        .timestamp() * 1000
+    )
 
-# ▶️ Run backtests for all cryptos and timeframes
-def run_for_all():
-    os.makedirs(OUTPUT_FOLDER, exist_ok=True)
+    ohlcv = []
+    while since < end_ts:
+        try:
+            batch = exchange.fetch_ohlcv(
+                symbol=symbol_ccxt,
+                timeframe=timeframe,
+                since=since,
+                limit=1000
+            )
+        except Exception as e:
+            print(f"\nError fetching OHLCV: {exchange.name} {e}")
+            break
 
-    # Clean output folder
-    for f in glob.glob(os.path.join(OUTPUT_FOLDER, "*")):
-        os.remove(f)
-    print(f"\n🧹 Folder '{OUTPUT_FOLDER}' cleaned successfully.")
+        if not batch:
+            break
 
-    exchange = get_exchange()
-    dates = [datetime.datetime(year, month, 1)
-             for year in range(START_YEAR, END_YEAR + 1)
-             for month in range(1, 13)]
+        ohlcv.extend(batch)
+        since = batch[-1][0] + 1
+        print(f"    Downloaded {len(ohlcv)} candles for {symbol_ccxt} {timeframe}", end="\r")
 
-    for symbol in CRYPTOS:
-        print(f"\n🔍 Processing {symbol}...")
-        wb = Workbook()
-        wb.remove(wb.active)
+    if not ohlcv:
+        return pd.DataFrame()
 
-        for tf in TIMEFRAMES:
-            results = []
-            limit_for_tf = TIMEFRAME_CANDLES_PER_MONTH.get(tf, CANDLE_LIMIT)
+    df = pd.DataFrame(
+        ohlcv,
+        columns=["timestamp", "open", "high", "low", "close", "volume"]
+    )
+    df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms", utc=True)
+    df.set_index("timestamp", inplace=True)
+    return df.loc[START_DATE:END_DATE]
 
-            for start_date in tqdm(dates, desc=f"{symbol} {tf}", unit="month"):
-                stats = run_backtest(
-                    exchange,
-                    symbol.replace("USDT", "/USDT"),
-                    tf,
-                    start_date,
-                    strategy_func=backtest_strategy,
-                    lookback=LOOKBACK,
-                    limit=limit_for_tf
-                )
-                if stats is not None:
-                    results.append(stats)
+# =========================================================
+# REMOVE TIMEZONE
+# =========================================================
+def remove_timezone(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Remove timezone from all datetime columns and index.
+    Updated for Pandas deprecation warning.
+    """
+    for col in df.columns:
+        if isinstance(df[col].dtype, pd.DatetimeTZDtype):
+            df[col] = df[col].dt.tz_convert(None)
+    if isinstance(df.index.dtype, pd.DatetimeTZDtype):
+        df.index = df.index.tz_convert(None)
+    return df
 
-            if not results:
-                print(f"\n⚠ Not enough data for {symbol} {tf}")
+# =========================================================
+# RUN BACKTEST
+# =========================================================
+def run():
+    all_stats = []
+    all_signals = []
+
+    for symbol in SYMBOLS:
+        # Descriptive line with gear icon
+        print(f"\n⚙️ Generating backtest for pair {symbol}")
+
+        for timeframe in TIMEFRAMES:
+            df = fetch_ohlcv(symbol, timeframe)
+            if df.empty or len(df) < LOOKBACK + 50:
+                print("    Insufficient data, skipping...")
                 continue
 
-            df = pd.DataFrame(results)
-            df.reset_index(inplace=True)
-            ws = wb.create_sheet(title=tf)
-            for row in dataframe_to_rows(df, index=False, header=True):
-                ws.append(row)
+            total_steps = len(df) - LOOKBACK
+            for i in range(total_steps):
+                print_progress_bar(i + 1, total_steps, prefix=f"{timeframe}")
 
-        file_path = os.path.join(OUTPUT_FOLDER, f"{symbol}.xlsx")
-        wb.save(file_path)
-        print(f"\n✅ File saved: {file_path}")
+            # =============================
+            # EXECUTE STRATEGY
+            # =============================
+            entries_long, entries_short = backtest_strategy(df, lookback=LOOKBACK)
 
+            # =============================
+            # CREATE VECTORBT PORTFOLIO
+            # =============================
+            portfolio = vbt.Portfolio.from_signals(
+                close=df["close"],
+                entries=entries_long,
+                exits=entries_short,
+                init_cash=INITIAL_BALANCE,
+                fees=FEE_PERCENTAGE,
+                slippage=SLIPPAGE
+            )
 
-# 🚀 Main execution
+            # =============================
+            # COLLECT COMPLETE STATISTICS
+            # =============================
+            stats = portfolio.stats()
+            stats["symbol"] = symbol
+            stats["timeframe"] = timeframe
+            all_stats.append(stats)
+
+            # =============================
+            # SAVE SIGNALS PER CANDLE
+            # =============================
+            signals_df = pd.DataFrame({
+                "timestamp": df.index,
+                "open": df["open"],
+                "close": df["close"],
+                "high": df["high"],
+                "low": df["low"],
+                "volume": df["volume"],
+                "entry_long": entries_long,
+                "entry_short": entries_short
+            })
+            signals_df["symbol"] = symbol
+            signals_df["timeframe"] = timeframe
+            all_signals.append(signals_df)
+
+            print(
+                f"    Result | Total Return: {stats['Total Return [%]']:.2f}% | "
+                f"Trades executed: {stats['Total Trades']}"
+            )
+
+    # =============================
+    # EXPORT RESULTS
+    # =============================
+    if all_stats:
+        stats_df = pd.DataFrame(all_stats)
+        stats_df = remove_timezone(stats_df)
+        stats_df.to_excel(OUTPUT_FILE, index=False)
+        print(f"\nComplete statistics saved to: {OUTPUT_FILE}")
+
+    if all_signals:
+        signals_df = pd.concat(all_signals, ignore_index=True)
+        signals_df = remove_timezone(signals_df)
+        signals_df.to_excel(OUTPUT_SIGNALS, index=False)
+        print(f"Candle-by-candle signals saved to: {OUTPUT_SIGNALS}")
+
+# =========================================================
+# ENTRY POINT
+# =========================================================
 if __name__ == "__main__":
     try:
-        run_for_all()
+        run()
     except Exception as e:
-        print(f"\n❌ Unexpected error: {e}")
-    input("\n✅ Execution finished. Press Enter to exit...")
+        print("\nError during execution:")
+        print(e)
+        input("\nPress ENTER to exit...")

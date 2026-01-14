@@ -1,64 +1,83 @@
 #!/bin/bash
-set -e
 
-# Check if the script is sourced
+# -------------------------------------------------------------------
+# Fail fast, but allow us to inspect Python errors
+# -------------------------------------------------------------------
+#set -e
+
+# -------------------------------------------------------------------
+# This script MUST be sourced
+# -------------------------------------------------------------------
 (return 0 2>/dev/null) || {
-    echo "⚠️  This script must be executed using 'source venv.sh [-u]' to work correctly."
-    exit 1
+    echo "⚠️  This script must be executed with:"
+    echo "    source venv.sh [-u]"
+    return 1
 }
 
-# Verificar se o argumento -u foi passado
+# -------------------------------------------------------------------
+# Flags
+# -------------------------------------------------------------------
 UPDATE_REQS=false
 for arg in "$@"; do
-    if [ "$arg" == "-u" ]; then
+    if [[ "$arg" == "-u" ]]; then
         UPDATE_REQS=true
         break
     fi
 done
 
+# -------------------------------------------------------------------
 # Create virtual environment if it doesn't exist
-if [ ! -d "venv" ]; then
+# -------------------------------------------------------------------
+if [[ ! -d "venv" ]]; then
     echo "📦 Creating virtual environment..."
-    py -m venv venv
+    if command -v py >/dev/null 2>&1; then
+        py -m venv venv
+    else
+        python -m venv venv
+    fi
 fi
 
+# -------------------------------------------------------------------
 # Activate virtual environment
+# -------------------------------------------------------------------
 echo "🐍 Activating virtual environment..."
-if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "win32" ]]; then
+
+if [[ "$OSTYPE" == msys* || "$OSTYPE" == cygwin* || "$OSTYPE" == win32* ]]; then
     source venv/Scripts/activate
 else
     source venv/bin/activate
 fi
 
-# Install dependencies only if -u is passed
+# -------------------------------------------------------------------
+# Upgrade pip (safe on Windows)
+# -------------------------------------------------------------------
+echo "⬆️  Upgrading pip..."
+python -m pip install --upgrade pip
+
+# -------------------------------------------------------------------
+# Install dependencies (optional)
+# -------------------------------------------------------------------
 if $UPDATE_REQS; then
-    if [ -f "requirements.txt" ]; then
-        echo "📄 requirements.txt found. Installing dependencies..."
-        pip install --upgrade pip
-
-        mapfile -t packages < requirements.txt
-        total=${#packages[@]}
-        count=0
-
-        for pkg in "${packages[@]}"; do
-            count=$((count + 1))
-            percent=$((count * 100 / total))
-            filled=$((percent / 5))  # 20-block progress bar
-            empty=$((20 - filled))
-            bar=$(printf "%0.s█" $(seq 1 $filled))
-            bar+=$(printf "%0.s " $(seq 1 $empty))
-            echo -ne "\r🔄 [$bar] $count/$total: $pkg"
-            pip install "$pkg" 2>/dev/null | grep -v "Requirement already satisfied" || true
-        done
-
-        echo -e "\n✅ Dependency installation complete!"
+    if [[ -f "requirements.txt" ]]; then
+        echo "📄 Installing dependencies from requirements.txt..."
+        python -m pip install -r requirements.txt
+        echo "✅ Dependencies installed!"
     else
-        echo "⚠️  No requirements.txt found. Skipping dependency installation."
+        echo "⚠️  requirements.txt not found. Skipping dependency installation."
     fi
 else
-    echo "ℹ️  Skipping dependency installation. Use 'source venv.sh -u' to update dependencies."
+    echo "ℹ️  Skipping dependency installation."
+    echo "    Use: source venv.sh -u"
 fi
 
-# Run the main script
+# -------------------------------------------------------------------
+# Run backtest executor
+# -------------------------------------------------------------------
 echo "🚀 Running executor.py..."
-python executor.py
+
+if ! python executor.py; then
+    echo ""
+    echo "❌ executor.py crashed!"
+    echo "👉 Press ENTER to close..."
+    read
+fi

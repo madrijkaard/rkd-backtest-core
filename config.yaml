@@ -1,25 +1,45 @@
-# config.yaml
+# =========================================================
+# General backtester configuration
+# =========================================================
 
-# 🕰️ Períodos gráficos utilizados no backtest
+exchange:
+  name: binance          # Supported exchange names: binance, bybit, huobi, coinbase
+  market: futures        # Market type: spot, futures, or coinm (coin-margined futures)
+  quote_asset: USDT       # Quote currency
+
+symbols:
+  - BTC/USDT              # List of trading pairs to backtest
+
 timeframes:
-  - 15m
+  - 1h                    # List of timeframes to backtest (e.g., 1h, 15m, 4h)
 
-# 📅 Intervalo de anos para o backtest
-start_year: 2018
-end_year: 2025
+date_range:
+  start_year: 2025
+  start_month: 1
+  end_year: 2025
+  end_month: 12
 
-# 🔁 Lookback usado para cálculo de mínimas/máximas
-lookback: 200
+execution:
+  initial_balance: 1000.0  # Starting capital
+  fee_percentage: 0.0004   # Fee per trade (0.04%)
+  slippage: 0.0            # Assumed slippage
 
-# 🔢 Quantidade de candles por backtest
-candle_limit: 1000
+strategy:
+  name: log_zones_activity
+  lookback_candles: 200
 
-# 🪙 Lista de criptomoedas a testar
-cryptos:
-  - BTCUSDT
+  zones:
+    total: 8               # Total number of logarithmic zones
+    top_active: 3          # Number of most active zones
+    bottom_active: 2       # Number of least active zones
 
-# 🏦 Nome da exchange a ser utilizada
-exchange_name: binance
+  activity:
+    min_percent_from_extreme: 40.0  # Minimum accumulation percentage to validate a trade
 
-# 📁 Pasta onde serão salvos os arquivos de resultado
-output_folder: backtest
+  targets:
+    take_profit_zones_ahead: 2      # Take profit in how many zones ahead
+    stop_loss_zones_behind: 2       # Stop loss in how many zones behind
+
+output:
+  folder: backtest_results          # Folder where results will be saved
+  export_excel: true                # Export results to Excel
