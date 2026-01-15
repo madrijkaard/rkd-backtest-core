@@ -66,7 +66,6 @@ def fetch_ohlcv(symbol: str, timeframe: str) -> pd.DataFrame:
     Fetch OHLCV data from the exchange using CCXT.
     Handles limits and date ranges.
     """
-    # Adjust symbol for Binance Futures
     symbol_ccxt = symbol.replace("/", "")
 
     since = int(
@@ -98,7 +97,9 @@ def fetch_ohlcv(symbol: str, timeframe: str) -> pd.DataFrame:
 
         ohlcv.extend(batch)
         since = batch[-1][0] + 1
-        print(f"    Downloaded {len(ohlcv)} candles for {symbol_ccxt} {timeframe}", end="\r")
+
+        # ✅ Remove print duplicado para não conflitar com progress bar
+        # print(f"    Downloaded {len(ohlcv)} candles for {symbol_ccxt} {timeframe}", end="\r")
 
     if not ohlcv:
         return pd.DataFrame()
@@ -117,7 +118,6 @@ def fetch_ohlcv(symbol: str, timeframe: str) -> pd.DataFrame:
 def remove_timezone(df: pd.DataFrame) -> pd.DataFrame:
     """
     Remove timezone from all datetime columns and index.
-    Updated for Pandas deprecation warning.
     """
     for col in df.columns:
         if isinstance(df[col].dtype, pd.DatetimeTZDtype):
@@ -134,7 +134,6 @@ def run():
     all_signals = []
 
     for symbol in SYMBOLS:
-        # Descriptive line with gear icon
         print(f"\n⚙️ Generating backtest for pair {symbol}")
 
         for timeframe in TIMEFRAMES:
