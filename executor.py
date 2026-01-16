@@ -22,7 +22,7 @@ SYMBOLS = config["symbols"]
 TIMEFRAMES = config["timeframes"]
 LOOKBACK = config["strategy"]["lookback_candles"]
 
-INITIAL_BALANCE = config["execution"].get("initial_balance", 1000)
+INITIAL_BALANCE = config["execution"].get("initial_balance", 1000.0)
 FEE_PERCENTAGE = config["execution"].get("fee_percentage", 0.0)
 SLIPPAGE = config["execution"].get("slippage", 0.0)
 
@@ -42,12 +42,6 @@ exchange = get_exchange()
 # HELPERS
 # =========================================================
 def timeframe_to_label(tf: str) -> str:
-    """
-    Converte timeframe CCXT para label de arquivo
-    Ex:
-        15m -> 15min
-        1h  -> 1h
-    """
     if tf.endswith("m"):
         return tf.replace("m", "min")
     return tf
@@ -85,8 +79,6 @@ def generate_month_ranges(start_year, start_month, end_year, end_month):
 # FETCH OHLCV (TZ-NAIVE)
 # =========================================================
 def fetch_ohlcv(symbol: str, timeframe: str) -> pd.DataFrame:
-    symbol_ccxt = symbol  # mantém padrão CCXT (BTC/USDT)
-
     start_date = datetime(
         date_cfg["start_year"],
         date_cfg["start_month"],
@@ -108,7 +100,7 @@ def fetch_ohlcv(symbol: str, timeframe: str) -> pd.DataFrame:
 
     while since < end_ts:
         batch = exchange.fetch_ohlcv(
-            symbol=symbol_ccxt,
+            symbol=symbol,
             timeframe=timeframe,
             since=since,
             limit=1000
@@ -130,8 +122,6 @@ def fetch_ohlcv(symbol: str, timeframe: str) -> pd.DataFrame:
 
     df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms", utc=True)
     df.set_index("timestamp", inplace=True)
-
-    # remove timezone → tz-naive
     df.index = df.index.tz_convert(None)
 
     return df
@@ -154,6 +144,7 @@ def run():
 
             all_monthly_stats = []
             all_monthly_signals = []
+            all_monthly_trades = []
 
             df_full = fetch_ohlcv(symbol, timeframe)
 
@@ -175,25 +166,31 @@ def run():
                     continue
 
                 # =============================
-                # STRATEGY
+                # STRATEGY (LONG + SHORT)
                 # =============================
-                entries_long, exits_long = backtest_strategy(
+                entries_long, exits_long, entries_short, exits_short = backtest_strategy(
                     df_month,
                     lookback=LOOKBACK
                 )
 
                 # =============================
-                # PORTFOLIO (RESET MONTHLY)
+                # PORTFOLIO (VECTORBT)
                 # =============================
                 portfolio = vbt.Portfolio.from_signals(
                     close=df_month["close"],
                     entries=entries_long,
                     exits=exits_long,
+                    short_entries=entries_short,
+                    short_exits=exits_short,
                     init_cash=INITIAL_BALANCE,
                     fees=FEE_PERCENTAGE,
-                    slippage=SLIPPAGE
+                    slippage=SLIPPAGE,
+                    freq=timeframe
                 )
 
+                # =============================
+                # STATS (MONTHLY)
+                # =============================
                 stats = portfolio.stats()
                 stats["symbol"] = symbol
                 stats["timeframe"] = timeframe
@@ -202,15 +199,20 @@ def run():
 
                 all_monthly_stats.append(stats)
 
+                # =============================
+                # SIGNALS (CANDLE LEVEL)
+                # =============================
                 signals_df = pd.DataFrame({
                     "timestamp": df_month.index,
                     "open": df_month["open"],
-                    "close": df_month["close"],
                     "high": df_month["high"],
                     "low": df_month["low"],
+                    "close": df_month["close"],
                     "volume": df_month["volume"],
                     "entry_long": entries_long,
                     "exit_long": exits_long,
+                    "entry_short": entries_short,
+                    "exit_short": exits_short,
                     "symbol": symbol,
                     "timeframe": timeframe,
                     "month": month_start.month,
@@ -218,6 +220,19 @@ def run():
                 })
 
                 all_monthly_signals.append(signals_df)
+
+                # =============================
+                # TRADES (PER-TRADE)
+                # =============================
+                trades_df = portfolio.trades.records_readable.copy()
+
+                if not trades_df.empty:
+                    trades_df["symbol"] = symbol
+                    trades_df["timeframe"] = timeframe
+                    trades_df["month"] = month_start.month
+                    trades_df["year"] = month_start.year
+
+                    all_monthly_trades.append(trades_df)
 
                 print(
                     f" {month_start.strftime('%Y-%m')} | "
@@ -231,15 +246,19 @@ def run():
             if all_monthly_stats:
                 stats_df = pd.DataFrame(all_monthly_stats)
                 stats_df.to_excel(output_file, index=False)
-
                 print(f"\n📁 Monthly stats saved to: {output_file}")
 
             if all_monthly_signals:
                 signals_df = pd.concat(all_monthly_signals, ignore_index=True)
                 signals_file = output_file.replace(".xlsx", "_signals.xlsx")
                 signals_df.to_excel(signals_file, index=False)
-
                 print(f"📁 Monthly signals saved to: {signals_file}")
+
+            if all_monthly_trades:
+                trades_df = pd.concat(all_monthly_trades, ignore_index=True)
+                trades_file = output_file.replace(".xlsx", "_trades.xlsx")
+                trades_df.to_excel(trades_file, index=False)
+                print(f"📁 Monthly trades saved to: {trades_file}")
 
 
 # =========================================================

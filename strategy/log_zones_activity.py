@@ -1,3 +1,5 @@
+# strategy/log_zones_activity.py
+
 import numpy as np
 
 
@@ -6,17 +8,11 @@ import numpy as np
 # ============================================================
 
 def zones_in_sequence(zones):
-    """
-    Verifica se as zonas estão em sequência contínua
-    """
     zones = sorted(zones)
     return zones[1] == zones[0] + 1 and zones[2] == zones[1] + 1
 
 
 def percentage_since_last_extreme(window):
-    """
-    Calcula o percentual de candles desde o último extremo (máximo ou mínimo)
-    """
     high_idx = np.argmax(window)
     low_idx = np.argmin(window)
     last_extreme_idx = max(high_idx, low_idx)
@@ -24,10 +20,7 @@ def percentage_since_last_extreme(window):
     return (dist / len(window)) * 100
 
 
-def compute_log_zones(price_min, price_max, n_zones=8):
-    """
-    Calcula os níveis logarítmicos de preço para n_zones
-    """
+def compute_log_zones(price_min, price_max, n_zones):
     log_min = np.log(price_min)
     log_max = np.log(price_max)
     levels = np.linspace(log_min, log_max, n_zones + 1)
@@ -35,39 +28,71 @@ def compute_log_zones(price_min, price_max, n_zones=8):
 
 
 # ============================================================
-# Estratégia principal
+# Estratégia principal (MODELO CORRIGIDO – 7 ZONAS REAIS)
 # ============================================================
 
 def log_zones_activity_strategy(close, open_, lookback=200):
-    """
-    Retorna sinais de Long e Short baseados em zonas logarítmicas.
-    """
-    entries_long = np.zeros(len(close), dtype=bool)
-    entries_short = np.zeros(len(close), dtype=bool)
 
-    N_ZONES = 8
-    MAX_ZONE = N_ZONES - 1  # 7
-    MIN_ZONE = 0            # 0
+    n = len(close)
 
-    for i in range(lookback, len(close)):
+    entries_long = np.zeros(n, dtype=bool)
+    exits_long = np.zeros(n, dtype=bool)
+
+    entries_short = np.zeros(n, dtype=bool)
+    exits_short = np.zeros(n, dtype=bool)
+
+    in_long = False
+    in_short = False
+
+    stop_long = None
+    stop_short = None
+    target_long = None
+    target_short = None
+
+    # 🔴 MODELO CORRETO: 7 zonas (0 a 6)
+    N_ZONES = 7
+
+    for i in range(lookback, n):
+
+        price_prev = close[i - 1]
+        price_now = close[i]
+
+        # ====================================================
+        # Gerenciamento de posição
+        # ====================================================
+
+        if in_long:
+            if price_now <= stop_long or price_now >= target_long:
+                exits_long[i] = True
+                in_long = False
+                stop_long = None
+                target_long = None
+
+        if in_short:
+            if price_now >= stop_short or price_now <= target_short:
+                exits_short[i] = True
+                in_short = False
+                stop_short = None
+                target_short = None
+
+        if in_long or in_short:
+            continue
+
+        # ====================================================
+        # Estrutura de mercado
+        # ====================================================
+
         window_close = close[i - lookback:i]
-        window_open = open_[i - lookback:i]
+
+        if percentage_since_last_extreme(window_close) < 40:
+            continue
 
         price_min = window_close.min()
         price_max = window_close.max()
 
-        # ----------------------------------------------------
-        # Filtro: acumulação mínima desde último extremo
-        # ----------------------------------------------------
-        if percentage_since_last_extreme(window_close) < 40:
-            continue
-
         limits = compute_log_zones(price_min, price_max, N_ZONES)
         activity = np.zeros(N_ZONES)
 
-        # ----------------------------------------------------
-        # Cálculo de atividade por zona (corpo do candle)
-        # ----------------------------------------------------
         for j in range(i - lookback, i):
             body_low = min(open_[j], close[j])
             body_high = max(open_[j], close[j])
@@ -82,81 +107,66 @@ def log_zones_activity_strategy(close, open_, lookback=200):
                 if overlap_high > overlap_low:
                     activity[z] += (overlap_high - overlap_low) / body_low
 
-        # ----------------------------------------------------
-        # Zonas mais / menos ativas
-        # ----------------------------------------------------
+        # ====================================================
+        # Seleção das 3 zonas mais ativas
+        # ====================================================
+
         sorted_zones = np.argsort(activity)
         top3 = sorted_zones[-3:]
-        bottom2 = sorted_zones[:2]
 
-        # Top3 precisa ser sequência
+        # precisam ser sequenciais
         if not zones_in_sequence(top3):
             continue
 
         top3_sorted = sorted(top3)
         central_zone = top3_sorted[1]
 
-        price_prev = close[i - 1]
-        price_now = close[i]
-
         central_low = limits[central_zone]
         central_high = limits[central_zone + 1]
+        central_mid = (central_low + central_high) / 2
 
         # ====================================================
-        # 🟢 LONG
+        # 🟢 LONG — SÓ SE EXISTIR ZONA +2
         # ====================================================
 
-        # ❌ Bloqueio estrutural:
-        # Top3 = [5,6,7] → zonas [6,7,8] (1-based)
-        if top3_sorted[-1] == MAX_ZONE:
-            allow_long = False
-        else:
-            allow_long = True
-
-        if allow_long:
+        if central_zone + 2 < N_ZONES:
             crossed_up = price_prev <= central_high and price_now > central_high
 
             if crossed_up:
-                zone_above = central_zone + 1
-                zone_above_above = central_zone + 2
-
-                block_long = (
-                    zone_above in top3 and
-                    zone_above_above <= MAX_ZONE and
-                    zone_above_above in bottom2
-                )
-
-                if not block_long:
-                    entries_long[i] = True
+                entries_long[i] = True
+                in_long = True
+                stop_long = central_mid
+                target_long = limits[central_zone + 2 + 1]  # topo da zona +2
+                continue
 
         # ====================================================
-        # 🔴 SHORT
+        # 🔴 SHORT — SÓ SE EXISTIR ZONA -2
         # ====================================================
 
-        # ❌ Bloqueio estrutural:
-        # Top3 = [0,1,2] → zonas [1,2,3] (1-based)
-        if top3_sorted[0] == MIN_ZONE:
-            allow_short = False
-        else:
-            allow_short = True
-
-        if allow_short:
+        if central_zone - 2 >= 0:
             crossed_down = price_prev >= central_low and price_now < central_low
 
             if crossed_down:
-                zone_below = central_zone - 1
-                zone_below_below = central_zone - 2
+                entries_short[i] = True
+                in_short = True
+                stop_short = central_mid
+                target_short = limits[central_zone - 2]  # fundo da zona -2
+                continue
 
-                block_short = (
-                    zone_below in top3 and
-                    zone_below_below >= MIN_ZONE and
-                    zone_below_below in bottom2
-                )
+    # ========================================================
+    # Flip de posição
+    # ========================================================
 
-                if not block_short:
-                    entries_short[i] = True
+    exits_long |= entries_short
+    exits_short |= entries_long
 
-    return entries_long, entries_short
+    conflict = entries_long & entries_short
+    entries_long[conflict] = False
+    entries_short[conflict] = False
+    exits_long[conflict] = False
+    exits_short[conflict] = False
+
+    return entries_long, exits_long, entries_short, exits_short
 
 
 # ============================================================
@@ -164,11 +174,9 @@ def log_zones_activity_strategy(close, open_, lookback=200):
 # ============================================================
 
 def backtest_strategy(data, lookback=200):
-    """
-    Interface padrão esperada pelo executor.py
-    """
     close = data["close"].values
     open_ = data["open"].values
+
     return log_zones_activity_strategy(
         close=close,
         open_=open_,
