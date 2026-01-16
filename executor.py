@@ -2,13 +2,13 @@ import os
 import yaml
 import pandas as pd
 import vectorbt as vbt
+from tqdm import tqdm
 
 from datetime import datetime, timezone, date
 from dateutil.relativedelta import relativedelta
 
 from exchange import get_exchange
 from strategy.log_zones_activity import backtest_strategy
-
 
 # =========================================================
 # LOAD CONFIG
@@ -31,12 +31,10 @@ date_cfg = config["date_range"]
 OUTPUT_FOLDER = config["output"]["folder"]
 os.makedirs(OUTPUT_FOLDER, exist_ok=True)
 
-
 # =========================================================
 # EXCHANGE
 # =========================================================
 exchange = get_exchange()
-
 
 # =========================================================
 # HELPERS
@@ -46,11 +44,9 @@ def timeframe_to_label(tf: str) -> str:
         return tf.replace("m", "min")
     return tf
 
-
 def build_output_filename(symbol: str, timeframe: str) -> str:
     symbol_clean = symbol.replace("/", "")
     tf_label = timeframe_to_label(timeframe)
-
     return (
         f"{symbol_clean}_"
         f"{date_cfg['start_month']}_{date_cfg['start_year']}_"
@@ -58,25 +54,19 @@ def build_output_filename(symbol: str, timeframe: str) -> str:
         f"{tf_label}.xlsx"
     )
 
-
 def generate_month_ranges(start_year, start_month, end_year, end_month):
     ranges = []
-
     current = date(start_year, start_month, 1)
     end = date(end_year, end_month, 1)
-
     while current <= end:
         month_start = pd.Timestamp(current)
         month_end = month_start + pd.offsets.MonthEnd(1)
-
         ranges.append((month_start, month_end))
         current += relativedelta(months=1)
-
     return ranges
 
-
 # =========================================================
-# FETCH OHLCV (TZ-NAIVE)
+# FETCH OHLCV (TZ-NAIVE) COM BARRA DE PROGRESSO
 # =========================================================
 def fetch_ohlcv(symbol: str, timeframe: str) -> pd.DataFrame:
     start_date = datetime(
@@ -85,32 +75,31 @@ def fetch_ohlcv(symbol: str, timeframe: str) -> pd.DataFrame:
         1,
         tzinfo=timezone.utc
     )
-
     end_date = datetime(
         date_cfg["end_year"],
         date_cfg["end_month"],
         28,
         tzinfo=timezone.utc
     )
-
     since = int(start_date.timestamp() * 1000)
     end_ts = int(end_date.timestamp() * 1000)
 
     ohlcv = []
 
-    while since < end_ts:
-        batch = exchange.fetch_ohlcv(
-            symbol=symbol,
-            timeframe=timeframe,
-            since=since,
-            limit=1000
-        )
-
-        if not batch:
-            break
-
-        ohlcv.extend(batch)
-        since = batch[-1][0] + 1
+    # Barra de progresso indeterminada
+    with tqdm(desc=f"Downloading {symbol} {timeframe}", unit="batch") as pbar:
+        while since < end_ts:
+            batch = exchange.fetch_ohlcv(
+                symbol=symbol,
+                timeframe=timeframe,
+                since=since,
+                limit=1000
+            )
+            if not batch:
+                break
+            ohlcv.extend(batch)
+            since = batch[-1][0] + 1
+            pbar.update(1)  # atualiza a cada batch real
 
     if not ohlcv:
         return pd.DataFrame()
@@ -119,20 +108,17 @@ def fetch_ohlcv(symbol: str, timeframe: str) -> pd.DataFrame:
         ohlcv,
         columns=["timestamp", "open", "high", "low", "close", "volume"]
     )
-
     df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms", utc=True)
     df.set_index("timestamp", inplace=True)
     df.index = df.index.tz_convert(None)
-
     return df
 
-
 # =========================================================
-# RUN BACKTEST (MONTHLY)
+# RUN BACKTEST (MONTHLY) COM BARRA DE PROGRESSO
 # =========================================================
 def run():
     for symbol in SYMBOLS:
-        print(f"\n⚙️ Running monthly backtest for {symbol}")
+        print(f"\n⚙️ Running backtest for {symbol}")
 
         for timeframe in TIMEFRAMES:
             print(f"\n⏱ Timeframe: {timeframe}")
@@ -146,6 +132,9 @@ def run():
             all_monthly_signals = []
             all_monthly_trades = []
 
+            # =============================
+            # FETCH OHLCV
+            # =============================
             df_full = fetch_ohlcv(symbol, timeframe)
 
             if df_full.empty or len(df_full) < LOOKBACK + 20:
@@ -159,7 +148,14 @@ def run():
                 date_cfg["end_month"]
             )
 
-            for month_start, month_end in month_ranges:
+            # =============================
+            # Loop mensal com barra de progresso
+            # =============================
+            for month_start, month_end in tqdm(
+                month_ranges,
+                desc=f"{symbol} | {timeframe}",
+                unit="month"
+            ):
                 df_month = df_full.loc[month_start:month_end]
 
                 if len(df_month) < LOOKBACK + 10:
@@ -196,7 +192,6 @@ def run():
                 stats["timeframe"] = timeframe
                 stats["month"] = month_start.month
                 stats["year"] = month_start.year
-
                 all_monthly_stats.append(stats)
 
                 # =============================
@@ -218,27 +213,18 @@ def run():
                     "month": month_start.month,
                     "year": month_start.year
                 })
-
                 all_monthly_signals.append(signals_df)
 
                 # =============================
                 # TRADES (PER-TRADE)
                 # =============================
                 trades_df = portfolio.trades.records_readable.copy()
-
                 if not trades_df.empty:
                     trades_df["symbol"] = symbol
                     trades_df["timeframe"] = timeframe
                     trades_df["month"] = month_start.month
                     trades_df["year"] = month_start.year
-
                     all_monthly_trades.append(trades_df)
-
-                print(
-                    f" {month_start.strftime('%Y-%m')} | "
-                    f"Return: {stats['Total Return [%]']:.2f}% | "
-                    f"Trades: {stats['Total Trades']}"
-                )
 
             # =============================
             # EXPORT RESULTS
@@ -259,7 +245,6 @@ def run():
                 trades_file = output_file.replace(".xlsx", "_trades.xlsx")
                 trades_df.to_excel(trades_file, index=False)
                 print(f"📁 Monthly trades saved to: {trades_file}")
-
 
 # =========================================================
 # ENTRY POINT

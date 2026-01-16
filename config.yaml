@@ -8,13 +8,16 @@ exchange:
   quote_asset: USDT       # Quote currency
 
 symbols:
-  - BTC/USDT              # List of trading pairs to backtest
+  - ETH/USDT              # List of trading pairs to backtest
 
 timeframes:
   - 15m                   # List of timeframes to backtest (e.g., 1h, 15m, 4h)
+  - 30m
+  - 1h
+  - 4h
 
 date_range:
-  start_year: 2018
+  start_year: 2019
   start_month: 1
   end_year: 2025
   end_month: 12
