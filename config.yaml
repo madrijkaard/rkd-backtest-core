@@ -11,10 +11,10 @@ symbols:
   - BTC/USDT              # List of trading pairs to backtest
 
 timeframes:
-  - 1h                    # List of timeframes to backtest (e.g., 1h, 15m, 4h)
+  - 15m                   # List of timeframes to backtest (e.g., 1h, 15m, 4h)
 
 date_range:
-  start_year: 2025
+  start_year: 2018
   start_month: 1
   end_year: 2025
   end_month: 12
