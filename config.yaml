@@ -3,29 +3,26 @@
 # =========================================================
 
 exchange:
-  name: binance          # Supported exchange names: binance, bybit, huobi, coinbase
-  market: futures        # Market type: spot, futures, or coinm (coin-margined futures)
+  name: binance           # Supported exchange names: binance, bybit, huobi, coinbase
+  market: futures         # Market type: spot, futures, or coinm (coin-margined futures)
   quote_asset: USDT       # Quote currency
 
 symbols:
-  - ETH/USDT              # List of trading pairs to backtest
+  - AVAX/USDT              # List of trading pairs to backtest
 
 timeframes:
-  - 15m                   # List of timeframes to backtest (e.g., 1h, 15m, 4h)
-  - 30m
+  - 30m                    # List of timeframes to backtest (15m, 30m, 1h, 4h)
   - 1h
-  - 4h
 
 date_range:
-  start_year: 2019
+  start_year: 2020
   start_month: 1
   end_year: 2025
   end_month: 12
 
 execution:
-  initial_balance: 1000.0  # Starting capital
-  fee_percentage: 0.0004   # Fee per trade (0.04%)
-  slippage: 0.0            # Assumed slippage
+  initial_balance: 1000.0   # Starting capital
+  max_loss_percent: 3.0     # Maximum allowed stop loss percentage (e.g., 1.0 = 1%)
 
 strategy:
   name: log_zones_activity
@@ -37,7 +34,7 @@ strategy:
     bottom_active: 2       # Number of least active zones
 
   activity:
-    min_percent_from_extreme: 40.0  # Minimum accumulation percentage to validate a trade
+    min_percent_from_extreme: 45.0  # Minimum accumulation percentage to validate a trade
 
   targets:
     take_profit_zones_ahead: 2      # Take profit in how many zones ahead

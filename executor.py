@@ -1,5 +1,8 @@
+# executor.py
+
 import os
 import yaml
+import shutil
 import pandas as pd
 import vectorbt as vbt
 from tqdm import tqdm
@@ -23,13 +26,11 @@ TIMEFRAMES = config["timeframes"]
 LOOKBACK = config["strategy"]["lookback_candles"]
 
 INITIAL_BALANCE = config["execution"].get("initial_balance", 1000.0)
-FEE_PERCENTAGE = config["execution"].get("fee_percentage", 0.0)
-SLIPPAGE = config["execution"].get("slippage", 0.0)
+MAX_LOSS_PERCENT = config["execution"].get("max_loss_percent", None)
 
 date_cfg = config["date_range"]
 
 OUTPUT_FOLDER = config["output"]["folder"]
-os.makedirs(OUTPUT_FOLDER, exist_ok=True)
 
 # =========================================================
 # EXCHANGE
@@ -44,14 +45,13 @@ def timeframe_to_label(tf: str) -> str:
         return tf.replace("m", "min")
     return tf
 
-def build_output_filename(symbol: str, timeframe: str) -> str:
+def build_output_filename(symbol: str) -> str:
+    """Nome do arquivo sem timeframe"""
     symbol_clean = symbol.replace("/", "")
-    tf_label = timeframe_to_label(timeframe)
     return (
         f"{symbol_clean}_"
         f"{date_cfg['start_month']}_{date_cfg['start_year']}_"
-        f"{date_cfg['end_month']}_{date_cfg['end_year']}_"
-        f"{tf_label}.xlsx"
+        f"{date_cfg['end_month']}_{date_cfg['end_year']}.xlsx"
     )
 
 def generate_month_ranges(start_year, start_month, end_year, end_month):
@@ -64,6 +64,26 @@ def generate_month_ranges(start_year, start_month, end_year, end_month):
         ranges.append((month_start, month_end))
         current += relativedelta(months=1)
     return ranges
+
+# =========================================================
+# CLEAN OUTPUT FOLDER
+# =========================================================
+def clean_output_folder(path: str):
+    if path in ("", ".", "/", ".."):
+        raise ValueError(f"Unsafe OUTPUT_FOLDER path: '{path}'")
+
+    if os.path.exists(path):
+        for name in os.listdir(path):
+            file_path = os.path.join(path, name)
+            try:
+                if os.path.isfile(file_path) or os.path.islink(file_path):
+                    os.unlink(file_path)
+                elif os.path.isdir(file_path):
+                    shutil.rmtree(file_path)
+            except Exception as e:
+                print(f"⚠️ Failed to delete {file_path}: {e}")
+    else:
+        os.makedirs(path, exist_ok=True)
 
 # =========================================================
 # FETCH OHLCV (TZ-NAIVE) COM BARRA DE PROGRESSO
@@ -86,8 +106,8 @@ def fetch_ohlcv(symbol: str, timeframe: str) -> pd.DataFrame:
 
     ohlcv = []
 
-    # Barra de progresso indeterminada
-    with tqdm(desc=f"Downloading {symbol} {timeframe}", unit="batch") as pbar:
+    # ✅ Texto em inglês e sem símbolo/timeframe
+    with tqdm(desc="Downloading candlesticks", unit="batch") as pbar:
         while since < end_ts:
             batch = exchange.fetch_ohlcv(
                 symbol=symbol,
@@ -99,7 +119,7 @@ def fetch_ohlcv(symbol: str, timeframe: str) -> pd.DataFrame:
                 break
             ohlcv.extend(batch)
             since = batch[-1][0] + 1
-            pbar.update(1)  # atualiza a cada batch real
+            pbar.update(1)
 
     if not ohlcv:
         return pd.DataFrame()
@@ -111,26 +131,34 @@ def fetch_ohlcv(symbol: str, timeframe: str) -> pd.DataFrame:
     df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms", utc=True)
     df.set_index("timestamp", inplace=True)
     df.index = df.index.tz_convert(None)
+
     return df
 
 # =========================================================
-# RUN BACKTEST (MONTHLY) COM BARRA DE PROGRESSO
+# RUN BACKTEST (MONTHLY)
 # =========================================================
 def run():
+    print(f"\n🧹 Cleaning output folder: {OUTPUT_FOLDER}")
+    clean_output_folder(OUTPUT_FOLDER)
+    os.makedirs(OUTPUT_FOLDER, exist_ok=True)
+
     for symbol in SYMBOLS:
         print(f"\n⚙️ Running backtest for {symbol}")
+
+        # Monta o nome do arquivo sem timeframe
+        output_file = os.path.join(
+            OUTPUT_FOLDER,
+            build_output_filename(symbol)
+        )
+
+        # Remove o arquivo antigo caso exista
+        if os.path.exists(output_file):
+            os.remove(output_file)
 
         for timeframe in TIMEFRAMES:
             print(f"\n⏱ Timeframe: {timeframe}")
 
-            output_file = os.path.join(
-                OUTPUT_FOLDER,
-                build_output_filename(symbol, timeframe)
-            )
-
             all_monthly_stats = []
-            all_monthly_signals = []
-            all_monthly_trades = []
 
             # =============================
             # FETCH OHLCV
@@ -149,11 +177,12 @@ def run():
             )
 
             # =============================
-            # Loop mensal com barra de progresso
+            # MONTHLY LOOP
             # =============================
+            # ✅ Texto em inglês e sem símbolo/timeframe
             for month_start, month_end in tqdm(
                 month_ranges,
-                desc=f"{symbol} | {timeframe}",
+                desc="Running backtest",
                 unit="month"
             ):
                 df_month = df_full.loc[month_start:month_end]
@@ -162,15 +191,16 @@ def run():
                     continue
 
                 # =============================
-                # STRATEGY (LONG + SHORT)
+                # STRATEGY
                 # =============================
                 entries_long, exits_long, entries_short, exits_short = backtest_strategy(
                     df_month,
-                    lookback=LOOKBACK
+                    lookback=LOOKBACK,
+                    max_loss_percent=MAX_LOSS_PERCENT
                 )
 
                 # =============================
-                # PORTFOLIO (VECTORBT)
+                # PORTFOLIO (SEM FEES / SLIPPAGE)
                 # =============================
                 portfolio = vbt.Portfolio.from_signals(
                     close=df_month["close"],
@@ -179,13 +209,11 @@ def run():
                     short_entries=entries_short,
                     short_exits=exits_short,
                     init_cash=INITIAL_BALANCE,
-                    fees=FEE_PERCENTAGE,
-                    slippage=SLIPPAGE,
                     freq=timeframe
                 )
 
                 # =============================
-                # STATS (MONTHLY)
+                # STATS
                 # =============================
                 stats = portfolio.stats()
                 stats["symbol"] = symbol
@@ -194,57 +222,18 @@ def run():
                 stats["year"] = month_start.year
                 all_monthly_stats.append(stats)
 
-                # =============================
-                # SIGNALS (CANDLE LEVEL)
-                # =============================
-                signals_df = pd.DataFrame({
-                    "timestamp": df_month.index,
-                    "open": df_month["open"],
-                    "high": df_month["high"],
-                    "low": df_month["low"],
-                    "close": df_month["close"],
-                    "volume": df_month["volume"],
-                    "entry_long": entries_long,
-                    "exit_long": exits_long,
-                    "entry_short": entries_short,
-                    "exit_short": exits_short,
-                    "symbol": symbol,
-                    "timeframe": timeframe,
-                    "month": month_start.month,
-                    "year": month_start.year
-                })
-                all_monthly_signals.append(signals_df)
-
-                # =============================
-                # TRADES (PER-TRADE)
-                # =============================
-                trades_df = portfolio.trades.records_readable.copy()
-                if not trades_df.empty:
-                    trades_df["symbol"] = symbol
-                    trades_df["timeframe"] = timeframe
-                    trades_df["month"] = month_start.month
-                    trades_df["year"] = month_start.year
-                    all_monthly_trades.append(trades_df)
-
             # =============================
-            # EXPORT RESULTS
+            # EXPORT STATISTICS (Excel por aba)
             # =============================
             if all_monthly_stats:
                 stats_df = pd.DataFrame(all_monthly_stats)
-                stats_df.to_excel(output_file, index=False)
-                print(f"\n📁 Monthly stats saved to: {output_file}")
 
-            if all_monthly_signals:
-                signals_df = pd.concat(all_monthly_signals, ignore_index=True)
-                signals_file = output_file.replace(".xlsx", "_signals.xlsx")
-                signals_df.to_excel(signals_file, index=False)
-                print(f"📁 Monthly signals saved to: {signals_file}")
+                # Cria/atualiza Excel com aba para cada timeframe
+                with pd.ExcelWriter(output_file, engine="openpyxl",
+                                    mode="a" if os.path.exists(output_file) else "w") as writer:
+                    stats_df.to_excel(writer, index=False, sheet_name=timeframe)
 
-            if all_monthly_trades:
-                trades_df = pd.concat(all_monthly_trades, ignore_index=True)
-                trades_file = output_file.replace(".xlsx", "_trades.xlsx")
-                trades_df.to_excel(trades_file, index=False)
-                print(f"📁 Monthly trades saved to: {trades_file}")
+                print(f"\n📁 Stats for {timeframe} saved to: {output_file}")
 
 # =========================================================
 # ENTRY POINT
