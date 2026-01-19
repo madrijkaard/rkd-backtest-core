@@ -3,15 +3,18 @@
 import numpy as np
 import yaml
 import os
+import random
 
 # ============================================================
-# LOAD CONFIG (para pegar zones.total e min_percent_from_extreme)
+# LOAD CONFIG
 # ============================================================
 CONFIG_PATH = os.path.join(os.path.dirname(__file__), "..", "config.yaml")
 with open(CONFIG_PATH, "r", encoding="utf-8") as f:
     config = yaml.safe_load(f)
 
-TOTAL_ZONES = config["strategy"]["zones"]["total"]  # usa valor do YAML
+TOTAL_ZONES = config["strategy"]["zones"]["total"]
+TOP_ACTIVE = config["strategy"]["zones"]["top_active"]
+BOTTOM_ACTIVE = config["strategy"]["zones"]["bottom_active"]
 MIN_PERCENT_FROM_EXTREME = config["strategy"]["activity"]["min_percent_from_extreme"]
 
 # ============================================================
@@ -19,12 +22,10 @@ MIN_PERCENT_FROM_EXTREME = config["strategy"]["activity"]["min_percent_from_extr
 # ============================================================
 
 def zones_in_sequence(zones):
-    """Verifica se 3 zonas estão em sequência."""
     zones = sorted(zones)
     return zones[1] == zones[0] + 1 and zones[2] == zones[1] + 1
 
 def percentage_since_last_extreme(window):
-    """Calcula o percentual de candles desde o último máximo ou mínimo."""
     high_idx = np.argmax(window)
     low_idx = np.argmin(window)
     last_extreme_idx = max(high_idx, low_idx)
@@ -32,11 +33,31 @@ def percentage_since_last_extreme(window):
     return (dist / len(window)) * 100
 
 def compute_log_zones(price_min, price_max, n_zones):
-    """Calcula os níveis das zonas logarítmicas."""
     log_min = np.log(price_min)
     log_max = np.log(price_max)
-    levels = np.linspace(log_min, log_max, n_zones + 1)  # n_zones+1 para criar limites
+    levels = np.linspace(log_min, log_max, n_zones + 1)
     return np.exp(levels)
+
+def get_less_active_zones(activity: np.ndarray, bottom_active: int):
+    """
+    Retorna exatamente 'bottom_active' zonas menos ativas.
+    Em caso de empate que exceda o limite, sorteia.
+    """
+    sorted_indices = np.argsort(activity)
+    cutoff_index = sorted_indices[bottom_active - 1]
+    cutoff_value = activity[cutoff_index]
+
+    strictly_lower = np.where(activity < cutoff_value)[0].tolist()
+    equal_cutoff = np.where(activity == cutoff_value)[0].tolist()
+
+    remaining = bottom_active - len(strictly_lower)
+
+    if remaining > 0:
+        selected_equal = random.sample(equal_cutoff, remaining)
+    else:
+        selected_equal = []
+
+    return sorted(strictly_lower + selected_equal)
 
 # ============================================================
 # Estratégia principal
@@ -57,7 +78,7 @@ def log_zones_activity_strategy(close, open_, lookback=200, max_loss_percent=Non
     target_long = None
     target_short = None
 
-    N_ZONES = TOTAL_ZONES  # usa do YAML, ex: 8
+    N_ZONES = TOTAL_ZONES
 
     for i in range(lookback, n):
 
@@ -90,7 +111,6 @@ def log_zones_activity_strategy(close, open_, lookback=200, max_loss_percent=Non
         window_close = close[i - lookback:i]
         window_open = open_[i - lookback:i]
 
-        # Usa o valor do YAML para validar trade
         if percentage_since_last_extreme(window_close) < MIN_PERCENT_FROM_EXTREME:
             continue
 
@@ -100,11 +120,11 @@ def log_zones_activity_strategy(close, open_, lookback=200, max_loss_percent=Non
         activity = np.zeros(N_ZONES)
 
         # ====================================================
-        # Calcular atividade de cada zona
+        # Calcular atividade por zona
         # ====================================================
         for j in range(i - lookback, i):
-            body_low = min(open_[j], close[j])
-            body_high = max(open_[j], close[j])
+            body_low = min(window_open[j - (i - lookback)], window_close[j - (i - lookback)])
+            body_high = max(window_open[j - (i - lookback)], window_close[j - (i - lookback)])
 
             for z in range(N_ZONES):
                 zone_low = limits[z]
@@ -115,42 +135,40 @@ def log_zones_activity_strategy(close, open_, lookback=200, max_loss_percent=Non
                     activity[z] += (overlap_high - overlap_low) / body_low
 
         # ====================================================
-        # Seleção das 3 zonas mais ativas
+        # Top zonas mais ativas
         # ====================================================
         sorted_zones = np.argsort(activity)
-        top3 = sorted_zones[-3:]
+        top_zones = sorted_zones[-TOP_ACTIVE:]
 
-        if not zones_in_sequence(top3):
+        if TOP_ACTIVE != 3 or not zones_in_sequence(top_zones):
             continue
 
-        top3_sorted = sorted(top3)
-        central_zone = top3_sorted[1]  # zona central
+        top_sorted = sorted(top_zones)
+        central_zone = top_sorted[1]
 
         # ====================================================
-        # Identificação das zonas menos ativas
+        # Zonas menos ativas (CORRIGIDO)
         # ====================================================
-        min_activity = np.min(activity)
-        less_active_zones = np.where(activity == min_activity)[0]
+        less_active_zones = get_less_active_zones(activity, BOTTOM_ACTIVE)
 
         # ====================================================
         # Critérios de bloqueio
         # ====================================================
-        above_zone = top3_sorted[-1] + 1
-        below_zone = top3_sorted[0] - 1
+        above_zone = top_sorted[-1] + 1
+        below_zone = top_sorted[0] - 1
 
         block_long = above_zone in less_active_zones
         block_short = below_zone in less_active_zones
 
         # ====================================================
-        # Long
+        # LONG
         # ====================================================
         if not block_long and central_zone + 2 < N_ZONES:
             crossed_up = price_prev <= limits[central_zone + 1] and price_now > limits[central_zone + 1]
             if crossed_up:
                 stop_candidate = (limits[central_zone] + limits[central_zone + 1]) / 2
-                target_candidate = limits[central_zone + 2 + 1] if (central_zone + 2 + 1 <= N_ZONES) else limits[-1]
+                target_candidate = limits[central_zone + 3]
 
-                # Checa max_loss_percent
                 if max_loss_percent is not None:
                     stop_loss_percent = ((price_now - stop_candidate) / price_now) * 100
                     if stop_loss_percent > max_loss_percent:
@@ -163,7 +181,7 @@ def log_zones_activity_strategy(close, open_, lookback=200, max_loss_percent=Non
                 continue
 
         # ====================================================
-        # Short
+        # SHORT
         # ====================================================
         if not block_short and central_zone - 2 >= 0:
             crossed_down = price_prev >= limits[central_zone] and price_now < limits[central_zone]
@@ -171,7 +189,6 @@ def log_zones_activity_strategy(close, open_, lookback=200, max_loss_percent=Non
                 stop_candidate = (limits[central_zone] + limits[central_zone + 1]) / 2
                 target_candidate = limits[central_zone - 2]
 
-                # Checa max_loss_percent
                 if max_loss_percent is not None:
                     stop_loss_percent = ((stop_candidate - price_now) / price_now) * 100
                     if stop_loss_percent > max_loss_percent:
