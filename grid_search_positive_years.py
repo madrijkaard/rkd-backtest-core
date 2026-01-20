@@ -20,14 +20,16 @@ with open(CONFIG_PATH, "r", encoding="utf-8") as f:
 SYMBOLS = config["symbols"]
 TIMEFRAMES = config["timeframes"]
 LOOKBACK = config["strategy"]["lookback_candles"]
-INITIAL_BALANCE = config["execution"].get("initial_balance", 10000)  # mesmo valor do executor
+INITIAL_BALANCE = config["execution"].get("initial_balance", 10000)
 date_cfg = config["date_range"]
+START_YEAR = date_cfg["start_year"]
+END_YEAR = date_cfg["end_year"]
 
 # ============================================================
 # GRID SEARCH PARAMETERS (arrays definidos aqui)
 # ============================================================
-MAX_LOSS_VALUES = [1.5]  # percent
-MIN_PERCENT_EXTREME_VALUES = [55.0]  # percent
+MAX_LOSS_VALUES = [0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5]  # percent
+MIN_PERCENT_EXTREME_VALUES = [40.0, 45.0, 50.0, 55.0, 60.0]  # percent
 
 # ============================================================
 # EXCHANGE
@@ -88,21 +90,27 @@ def build_month_ranges(year):
 # ============================================================
 
 def run():
+    # Lista para armazenar combinações 100% positivas
+    positive_combinations = []
+
     for symbol in SYMBOLS:
         for timeframe in TIMEFRAMES:
             for max_loss, min_extreme in itertools.product(MAX_LOSS_VALUES, MIN_PERCENT_EXTREME_VALUES):
                 print(f"\n🔹 Running backtest for {symbol} | TF={timeframe} | MaxLoss={max_loss}% | MinExtreme={min_extreme}%")
 
-                for year in range(date_cfg["start_year"], date_cfg["end_year"] + 1):
+                all_years_positive = True  # flag para a combinação inteira
+
+                for year in range(START_YEAR, END_YEAR + 1):
                     # Carrega dados OHLCV do ano
                     df_full = fetch_ohlcv_year(symbol, timeframe, year)
                     if df_full.empty or len(df_full) < LOOKBACK + 20:
                         print(f"⚠️ Insufficient data for {symbol} {year} {timeframe}, skipping.")
+                        all_years_positive = False
                         continue
 
                     month_ranges = build_month_ranges(year)
-                    all_months_positive = True
                     annual_return = 0.0
+                    all_months_positive = True
 
                     for month_start, month_end in month_ranges:
                         df_month = df_full.loc[month_start:month_end]
@@ -138,6 +146,28 @@ def run():
                         f"| MaxLoss={max_loss}% | MinExtreme={min_extreme}% | AnnualReturn={annual_return:.2f}%"
                         + (" ✅ ALL MONTHS POSITIVE" if all_months_positive else "")
                     )
+
+                    if not all_months_positive:
+                        all_years_positive = False
+
+                # Se todos os anos tiveram meses positivos
+                if all_years_positive:
+                    positive_combinations.append({
+                        "symbol": symbol,
+                        "timeframe": timeframe,
+                        "max_loss_percent": max_loss,
+                        "min_percent_from_extreme": min_extreme
+                    })
+
+    # ============================================================
+    # RELATÓRIO FINAL
+    # ============================================================
+    print("\n\n✅ Combinations with all years positive (2020-2025):")
+    for combo in positive_combinations:
+        print(
+            f"Symbol={combo['symbol']} | TF={combo['timeframe']} "
+            f"| MaxLoss={combo['max_loss_percent']}% | MinExtreme={combo['min_percent_from_extreme']}%"
+        )
 
 # ============================================================
 # ENTRY POINT
