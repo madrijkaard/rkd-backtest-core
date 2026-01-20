@@ -11,7 +11,7 @@ from exchange import get_exchange
 from strategy.log_zones_activity import backtest_strategy
 
 # ============================================================
-# LOAD CONFIG
+# LOAD CONFIG (exceto max_loss_percent e min_percent_from_extreme)
 # ============================================================
 CONFIG_PATH = os.path.join(os.path.dirname(__file__), "config.yaml")
 with open(CONFIG_PATH, "r", encoding="utf-8") as f:
@@ -20,18 +20,23 @@ with open(CONFIG_PATH, "r", encoding="utf-8") as f:
 SYMBOLS = config["symbols"]
 TIMEFRAMES = config["timeframes"]
 LOOKBACK = config["strategy"]["lookback_candles"]
-
 INITIAL_BALANCE = config["execution"].get("initial_balance", 10000)  # mesmo valor do executor
-MAX_LOSS_PERCENT = config["execution"].get("max_loss_percent", None)
-
 date_cfg = config["date_range"]
 
-MIN_PERCENT_FROM_EXTREME = config["strategy"]["activity"]["min_percent_from_extreme"]
+# ============================================================
+# GRID SEARCH PARAMETERS (arrays definidos aqui)
+# ============================================================
+MAX_LOSS_VALUES = [1.5]  # percent
+MIN_PERCENT_EXTREME_VALUES = [55.0]  # percent
 
 # ============================================================
-# EXCHANGE (para fetch_ohlcv)
+# EXCHANGE
 # ============================================================
 exchange = get_exchange()
+
+# ============================================================
+# Funções auxiliares
+# ============================================================
 
 def fetch_ohlcv_year(symbol: str, timeframe: str, year: int) -> pd.DataFrame:
     """Carrega OHLCV do símbolo diretamente no timeframe desejado e filtra pelo ano."""
@@ -84,50 +89,55 @@ def build_month_ranges(year):
 
 def run():
     for symbol in SYMBOLS:
-        for year in range(date_cfg["start_year"], date_cfg["end_year"] + 1):
-            for timeframe in TIMEFRAMES:
-                # Carrega os dados diretamente no timeframe correto
-                df_full = fetch_ohlcv_year(symbol, timeframe, year)
-                if df_full.empty or len(df_full) < LOOKBACK + 20:
-                    print(f"⚠️ Insufficient data for {symbol} {year} {timeframe}, skipping.")
-                    continue
+        for timeframe in TIMEFRAMES:
+            for max_loss, min_extreme in itertools.product(MAX_LOSS_VALUES, MIN_PERCENT_EXTREME_VALUES):
+                print(f"\n🔹 Running backtest for {symbol} | TF={timeframe} | MaxLoss={max_loss}% | MinExtreme={min_extreme}%")
 
-                month_ranges = build_month_ranges(year)
-                all_months_positive = True
-                annual_return = 0.0
-
-                for month_start, month_end in month_ranges:
-                    df_month = df_full.loc[month_start:month_end]
-                    if len(df_month) < LOOKBACK + 10:
-                        all_months_positive = False
+                for year in range(date_cfg["start_year"], date_cfg["end_year"] + 1):
+                    # Carrega dados OHLCV do ano
+                    df_full = fetch_ohlcv_year(symbol, timeframe, year)
+                    if df_full.empty or len(df_full) < LOOKBACK + 20:
+                        print(f"⚠️ Insufficient data for {symbol} {year} {timeframe}, skipping.")
                         continue
 
-                    entries_l, exits_l, entries_s, exits_s = backtest_strategy(
-                        df_month,
-                        lookback=LOOKBACK,
-                        max_loss_percent=MAX_LOSS_PERCENT
+                    month_ranges = build_month_ranges(year)
+                    all_months_positive = True
+                    annual_return = 0.0
+
+                    for month_start, month_end in month_ranges:
+                        df_month = df_full.loc[month_start:month_end]
+                        if len(df_month) < LOOKBACK + 10:
+                            all_months_positive = False
+                            continue
+
+                        # Executa a estratégia com os parâmetros da grid
+                        entries_l, exits_l, entries_s, exits_s = backtest_strategy(
+                            df_month,
+                            lookback=LOOKBACK,
+                            max_loss_percent=max_loss
+                        )
+
+                        portfolio = vbt.Portfolio.from_signals(
+                            close=df_month["close"],
+                            entries=entries_l,
+                            exits=exits_l,
+                            short_entries=entries_s,
+                            short_exits=exits_s,
+                            init_cash=INITIAL_BALANCE,
+                            freq=timeframe
+                        )
+
+                        # Retorno mensal acumulado
+                        annual_return += portfolio.total_return() * 100
+                        if portfolio.total_return() <= 0:
+                            all_months_positive = False
+
+                    # Relatório anual
+                    print(
+                        f"▶ Processed | Symbol={symbol} | Year={year} | TF={timeframe} "
+                        f"| MaxLoss={max_loss}% | MinExtreme={min_extreme}% | AnnualReturn={annual_return:.2f}%"
+                        + (" ✅ ALL MONTHS POSITIVE" if all_months_positive else "")
                     )
-
-                    portfolio = vbt.Portfolio.from_signals(
-                        close=df_month["close"],
-                        entries=entries_l,
-                        exits=exits_l,
-                        short_entries=entries_s,
-                        short_exits=exits_s,
-                        init_cash=INITIAL_BALANCE,
-                        freq=timeframe
-                    )
-
-                    # Retorno mensal acumulado
-                    annual_return += portfolio.total_return() * 100
-                    if portfolio.total_return() <= 0:
-                        all_months_positive = False
-
-                print(
-                    f"▶ Processed | Symbol={symbol} | Year={year} | TF={timeframe} "
-                    f"| MaxLoss={MAX_LOSS_PERCENT}% | MinExtreme={MIN_PERCENT_FROM_EXTREME}% | AnnualReturn={annual_return:.2f}%"
-                    + (" ✅ ALL MONTHS POSITIVE" if all_months_positive else "")
-                )
 
 # ============================================================
 # ENTRY POINT
