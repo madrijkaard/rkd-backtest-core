@@ -15,7 +15,6 @@ with open(CONFIG_PATH, "r", encoding="utf-8") as f:
 TOTAL_ZONES = config["strategy"]["zones"]["total"]
 TOP_ACTIVE = config["strategy"]["zones"]["top_active"]
 BOTTOM_ACTIVE = config["strategy"]["zones"]["bottom_active"]
-MIN_PERCENT_FROM_EXTREME = config["strategy"]["activity"]["min_percent_from_extreme"]
 
 # ============================================================
 # Helpers
@@ -63,7 +62,7 @@ def get_less_active_zones(activity: np.ndarray, bottom_active: int):
 # Estratégia principal
 # ============================================================
 
-def log_zones_activity_strategy(close, open_, lookback=200, max_loss_percent=None):
+def log_zones_activity_strategy(close, open_, lookback=200, max_loss_percent=None, min_percent_from_extreme=55.0):
     n = len(close)
 
     entries_long = np.zeros(n, dtype=bool)
@@ -111,7 +110,7 @@ def log_zones_activity_strategy(close, open_, lookback=200, max_loss_percent=Non
         window_close = close[i - lookback:i]
         window_open = open_[i - lookback:i]
 
-        if percentage_since_last_extreme(window_close) < MIN_PERCENT_FROM_EXTREME:
+        if percentage_since_last_extreme(window_close) < min_percent_from_extreme:
             continue
 
         price_min = window_close.min()
@@ -147,7 +146,7 @@ def log_zones_activity_strategy(close, open_, lookback=200, max_loss_percent=Non
         central_zone = top_sorted[1]
 
         # ====================================================
-        # Zonas menos ativas (CORRIGIDO)
+        # Zonas menos ativas
         # ====================================================
         less_active_zones = get_less_active_zones(activity, BOTTOM_ACTIVE)
 
@@ -218,7 +217,7 @@ def log_zones_activity_strategy(close, open_, lookback=200, max_loss_percent=Non
 # Wrapper esperado pelo executor.py
 # ============================================================
 
-def backtest_strategy(data, lookback=200, max_loss_percent=None):
+def backtest_strategy(data, lookback=200, max_loss_percent=None, min_percent_from_extreme=55.0):
     close = data["close"].values
     open_ = data["open"].values
 
@@ -226,5 +225,6 @@ def backtest_strategy(data, lookback=200, max_loss_percent=None):
         close=close,
         open_=open_,
         lookback=lookback,
-        max_loss_percent=max_loss_percent
+        max_loss_percent=max_loss_percent,
+        min_percent_from_extreme=min_percent_from_extreme
     )

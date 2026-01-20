@@ -27,8 +27,11 @@ LOOKBACK = config["strategy"]["lookback_candles"]
 
 INITIAL_BALANCE = config["execution"].get("initial_balance", 1000.0)
 MAX_LOSS_PERCENT = config["execution"].get("max_loss_percent", None)
+MIN_PERCENT_FROM_EXTREME = config["strategy"]["activity"].get("min_percent_from_extreme", 55.0)
 
 date_cfg = config["date_range"]
+START_YEAR = date_cfg["start_year"]
+END_YEAR = date_cfg["end_year"]
 
 OUTPUT_FOLDER = config["output"]["folder"]
 
@@ -106,8 +109,7 @@ def fetch_ohlcv(symbol: str, timeframe: str) -> pd.DataFrame:
 
     ohlcv = []
 
-    # ✅ Texto em inglês e sem símbolo/timeframe
-    with tqdm(desc="Downloading candlesticks", unit="batch") as pbar:
+    with tqdm(desc=f"Downloading candlesticks {symbol} {timeframe}", unit="batch") as pbar:
         while since < end_ts:
             batch = exchange.fetch_ohlcv(
                 symbol=symbol,
@@ -179,7 +181,6 @@ def run():
             # =============================
             # MONTHLY LOOP
             # =============================
-            # ✅ Texto em inglês e sem símbolo/timeframe
             for month_start, month_end in tqdm(
                 month_ranges,
                 desc="Running backtest",
@@ -196,7 +197,8 @@ def run():
                 entries_long, exits_long, entries_short, exits_short = backtest_strategy(
                     df_month,
                     lookback=LOOKBACK,
-                    max_loss_percent=MAX_LOSS_PERCENT
+                    max_loss_percent=MAX_LOSS_PERCENT,
+                    min_percent_from_extreme=MIN_PERCENT_FROM_EXTREME  # ✅ Passa o valor dinâmico
                 )
 
                 # =============================

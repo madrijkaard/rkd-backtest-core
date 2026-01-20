@@ -11,7 +11,7 @@ from exchange import get_exchange
 from strategy.log_zones_activity import backtest_strategy
 
 # ============================================================
-# LOAD CONFIG (exceto max_loss_percent e min_percent_from_extreme)
+# LOAD CONFIG
 # ============================================================
 CONFIG_PATH = os.path.join(os.path.dirname(__file__), "config.yaml")
 with open(CONFIG_PATH, "r", encoding="utf-8") as f:
@@ -26,9 +26,9 @@ START_YEAR = date_cfg["start_year"]
 END_YEAR = date_cfg["end_year"]
 
 # ============================================================
-# GRID SEARCH PARAMETERS (arrays definidos aqui)
+# GRID SEARCH PARAMETERS
 # ============================================================
-MAX_LOSS_VALUES = [0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5]  # percent
+MAX_LOSS_VALUES = [1.5]  # percent
 MIN_PERCENT_EXTREME_VALUES = [40.0, 45.0, 50.0, 55.0, 60.0]  # percent
 
 # ============================================================
@@ -37,7 +37,7 @@ MIN_PERCENT_EXTREME_VALUES = [40.0, 45.0, 50.0, 55.0, 60.0]  # percent
 exchange = get_exchange()
 
 # ============================================================
-# Funções auxiliares
+# Helpers
 # ============================================================
 
 def fetch_ohlcv_year(symbol: str, timeframe: str, year: int) -> pd.DataFrame:
@@ -90,7 +90,6 @@ def build_month_ranges(year):
 # ============================================================
 
 def run():
-    # Lista para armazenar combinações 100% positivas
     positive_combinations = []
 
     for symbol in SYMBOLS:
@@ -98,10 +97,9 @@ def run():
             for max_loss, min_extreme in itertools.product(MAX_LOSS_VALUES, MIN_PERCENT_EXTREME_VALUES):
                 print(f"\n🔹 Running backtest for {symbol} | TF={timeframe} | MaxLoss={max_loss}% | MinExtreme={min_extreme}%")
 
-                all_years_positive = True  # flag para a combinação inteira
+                all_years_positive = True
 
                 for year in range(START_YEAR, END_YEAR + 1):
-                    # Carrega dados OHLCV do ano
                     df_full = fetch_ohlcv_year(symbol, timeframe, year)
                     if df_full.empty or len(df_full) < LOOKBACK + 20:
                         print(f"⚠️ Insufficient data for {symbol} {year} {timeframe}, skipping.")
@@ -122,7 +120,8 @@ def run():
                         entries_l, exits_l, entries_s, exits_s = backtest_strategy(
                             df_month,
                             lookback=LOOKBACK,
-                            max_loss_percent=max_loss
+                            max_loss_percent=max_loss,
+                            min_percent_from_extreme=min_extreme  # ✅ agora dinâmico
                         )
 
                         portfolio = vbt.Portfolio.from_signals(
@@ -135,12 +134,11 @@ def run():
                             freq=timeframe
                         )
 
-                        # Retorno mensal acumulado
+                        # Retorno anual aproximado acumulado
                         annual_return += portfolio.total_return() * 100
                         if portfolio.total_return() <= 0:
                             all_months_positive = False
 
-                    # Relatório anual
                     print(
                         f"▶ Processed | Symbol={symbol} | Year={year} | TF={timeframe} "
                         f"| MaxLoss={max_loss}% | MinExtreme={min_extreme}% | AnnualReturn={annual_return:.2f}%"
@@ -150,7 +148,6 @@ def run():
                     if not all_months_positive:
                         all_years_positive = False
 
-                # Se todos os anos tiveram meses positivos
                 if all_years_positive:
                     positive_combinations.append({
                         "symbol": symbol,
