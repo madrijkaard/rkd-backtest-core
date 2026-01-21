@@ -1,0 +1,40 @@
+# =========================================================
+# Log Zones Activity Strategy Configuration
+# =========================================================
+# Este arquivo contém APENAS parâmetros específicos
+# da estratégia log_zones_activity.
+# Ele NÃO deve conter informações de exchange, símbolos,
+# timeframes, datas ou output.
+# =========================================================
+
+strategy:
+  name: log_zones_activity
+
+  # ---------------------------------------------------------
+  # Core parameters
+  # ---------------------------------------------------------
+  lookback_candles: 200          # Número de candles usados para cálculo das zonas
+  max_loss_percent: 1.5          # Stop máximo permitido (%). None desativa o filtro
+
+  # ---------------------------------------------------------
+  # Logarithmic zones configuration
+  # ---------------------------------------------------------
+  zones:
+    total: 8                     # Total de zonas logarítmicas
+    top_active: 3                # Quantidade de zonas mais ativas (devem ser sequenciais)
+    bottom_active: 2             # Quantidade de zonas menos ativas (bloqueio)
+
+  # ---------------------------------------------------------
+  # Activity filters
+  # ---------------------------------------------------------
+  activity:
+    min_percent_from_extreme: 55.0
+    # Percentual mínimo de distância desde o último topo ou fundo
+    # para validar um novo trade (evita entradas muito cedo)
+
+  # ---------------------------------------------------------
+  # Trade targets (baseados em zonas)
+  # ---------------------------------------------------------
+  targets:
+    take_profit_zones_ahead: 2   # Quantas zonas à frente para take profit
+    stop_loss_zones_behind: 2    # Quantas zonas atrás para stop loss

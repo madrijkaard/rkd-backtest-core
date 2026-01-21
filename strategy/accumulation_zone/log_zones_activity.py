@@ -1,4 +1,4 @@
-# strategy/log_zones_activity.py
+# strategy/accumulation_zone/log_zones_activity.py
 
 import numpy as np
 import yaml
@@ -6,15 +6,18 @@ import os
 import random
 
 # ============================================================
-# LOAD CONFIG
+# LOAD STRATEGY CONFIG
 # ============================================================
-CONFIG_PATH = os.path.join(os.path.dirname(__file__), "..", "config.yaml")
+CONFIG_PATH = os.path.join(os.path.dirname(__file__), "config.yaml")
+
 with open(CONFIG_PATH, "r", encoding="utf-8") as f:
     config = yaml.safe_load(f)
 
-TOTAL_ZONES = config["strategy"]["zones"]["total"]
-TOP_ACTIVE = config["strategy"]["zones"]["top_active"]
-BOTTOM_ACTIVE = config["strategy"]["zones"]["bottom_active"]
+STRATEGY_CFG = config["strategy"]
+
+TOTAL_ZONES = STRATEGY_CFG["zones"]["total"]
+TOP_ACTIVE = STRATEGY_CFG["zones"]["top_active"]
+BOTTOM_ACTIVE = STRATEGY_CFG["zones"]["bottom_active"]
 
 # ============================================================
 # Helpers
@@ -62,7 +65,13 @@ def get_less_active_zones(activity: np.ndarray, bottom_active: int):
 # Estratégia principal
 # ============================================================
 
-def log_zones_activity_strategy(close, open_, lookback=200, max_loss_percent=None, min_percent_from_extreme=55.0):
+def log_zones_activity_strategy(
+    close,
+    open_,
+    lookback=200,
+    max_loss_percent=None,
+    min_percent_from_extreme=55.0
+):
     n = len(close)
 
     entries_long = np.zeros(n, dtype=bool)
@@ -76,8 +85,6 @@ def log_zones_activity_strategy(close, open_, lookback=200, max_loss_percent=Non
     stop_short = None
     target_long = None
     target_short = None
-
-    N_ZONES = TOTAL_ZONES
 
     for i in range(lookback, n):
 
@@ -115,17 +122,17 @@ def log_zones_activity_strategy(close, open_, lookback=200, max_loss_percent=Non
 
         price_min = window_close.min()
         price_max = window_close.max()
-        limits = compute_log_zones(price_min, price_max, N_ZONES)
-        activity = np.zeros(N_ZONES)
+        limits = compute_log_zones(price_min, price_max, TOTAL_ZONES)
+        activity = np.zeros(TOTAL_ZONES)
 
         # ====================================================
         # Calcular atividade por zona
         # ====================================================
-        for j in range(i - lookback, i):
-            body_low = min(window_open[j - (i - lookback)], window_close[j - (i - lookback)])
-            body_high = max(window_open[j - (i - lookback)], window_close[j - (i - lookback)])
+        for j in range(lookback):
+            body_low = min(window_open[j], window_close[j])
+            body_high = max(window_open[j], window_close[j])
 
-            for z in range(N_ZONES):
+            for z in range(TOTAL_ZONES):
                 zone_low = limits[z]
                 zone_high = limits[z + 1]
                 overlap_low = max(body_low, zone_low)
@@ -150,9 +157,6 @@ def log_zones_activity_strategy(close, open_, lookback=200, max_loss_percent=Non
         # ====================================================
         less_active_zones = get_less_active_zones(activity, BOTTOM_ACTIVE)
 
-        # ====================================================
-        # Critérios de bloqueio
-        # ====================================================
         above_zone = top_sorted[-1] + 1
         below_zone = top_sorted[0] - 1
 
@@ -162,7 +166,7 @@ def log_zones_activity_strategy(close, open_, lookback=200, max_loss_percent=Non
         # ====================================================
         # LONG
         # ====================================================
-        if not block_long and central_zone + 2 < N_ZONES:
+        if not block_long and central_zone + 2 < TOTAL_ZONES:
             crossed_up = price_prev <= limits[central_zone + 1] and price_now > limits[central_zone + 1]
             if crossed_up:
                 stop_candidate = (limits[central_zone] + limits[central_zone + 1]) / 2
@@ -214,10 +218,15 @@ def log_zones_activity_strategy(close, open_, lookback=200, max_loss_percent=Non
     return entries_long, exits_long, entries_short, exits_short
 
 # ============================================================
-# Wrapper esperado pelo executor.py
+# Wrapper esperado pelo grid_search_positive_years.py
 # ============================================================
 
-def backtest_strategy(data, lookback=200, max_loss_percent=None, min_percent_from_extreme=55.0):
+def backtest_strategy(
+    data,
+    lookback=200,
+    max_loss_percent=None,
+    min_percent_from_extreme=55.0
+):
     close = data["close"].values
     open_ = data["open"].values
 

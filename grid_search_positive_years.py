@@ -8,27 +8,46 @@ import yaml
 import os
 
 from exchange import get_exchange
-from strategy.log_zones_activity import backtest_strategy
+from strategy.accumulation_zone.log_zones_activity import backtest_strategy
 
 # ============================================================
-# LOAD CONFIG
+# LOAD GLOBAL CONFIG
 # ============================================================
-CONFIG_PATH = os.path.join(os.path.dirname(__file__), "config.yaml")
-with open(CONFIG_PATH, "r", encoding="utf-8") as f:
-    config = yaml.safe_load(f)
+BASE_DIR = os.path.dirname(__file__)
 
-SYMBOLS = config["symbols"]
-TIMEFRAMES = config["timeframes"]
-LOOKBACK = config["strategy"]["lookback_candles"]
-INITIAL_BALANCE = config["execution"].get("initial_balance", 10000)
-date_cfg = config["date_range"]
+GLOBAL_CONFIG_PATH = os.path.join(BASE_DIR, "config.yaml")
+with open(GLOBAL_CONFIG_PATH, "r", encoding="utf-8") as f:
+    global_config = yaml.safe_load(f)
+
+SYMBOLS = global_config["symbols"]
+TIMEFRAMES = global_config["timeframes"]
+INITIAL_BALANCE = global_config["execution"].get("initial_balance", 10000)
+
+date_cfg = global_config["date_range"]
 START_YEAR = date_cfg["start_year"]
 END_YEAR = date_cfg["end_year"]
 
 # ============================================================
-# GRID SEARCH PARAMETERS
+# LOAD STRATEGY CONFIG (ACCUMULATION ZONE)
 # ============================================================
-MAX_LOSS_VALUES = [1.5]  # percent
+STRATEGY_CONFIG_PATH = os.path.join(
+    BASE_DIR, "strategy", "accumulation_zone", "config.yaml"
+)
+
+with open(STRATEGY_CONFIG_PATH, "r", encoding="utf-8") as f:
+    strategy_config = yaml.safe_load(f)
+
+strategy_params = strategy_config["strategy"]
+
+LOOKBACK = strategy_params.get("lookback_candles", 200)
+MAX_LOSS_PERCENT = strategy_params.get("max_loss_percent", None)
+MIN_PERCENT_FROM_EXTREME = strategy_params["activity"].get("min_percent_from_extreme", 55.0)
+
+# ============================================================
+# GRID SEARCH PARAMETERS (CONTROLLED IN CODE – AS ORIGINAL)
+# ============================================================
+# Você pode sobrescrever MAX_LOSS_PERCENT ou MIN_PERCENT_FROM_EXTREME aqui
+MAX_LOSS_VALUES = [MAX_LOSS_PERCENT] if MAX_LOSS_PERCENT is not None else [1.5]  # percent
 MIN_PERCENT_EXTREME_VALUES = [40.0, 45.0, 50.0, 55.0, 60.0]  # percent
 
 # ============================================================
@@ -67,7 +86,10 @@ def fetch_ohlcv_year(symbol: str, timeframe: str, year: int) -> pd.DataFrame:
     if not ohlcv:
         return pd.DataFrame()
 
-    df = pd.DataFrame(ohlcv, columns=["timestamp", "open", "high", "low", "close", "volume"])
+    df = pd.DataFrame(
+        ohlcv,
+        columns=["timestamp", "open", "high", "low", "close", "volume"]
+    )
     df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms", utc=True)
     df.set_index("timestamp", inplace=True)
     df.index = df.index.tz_convert(None)
@@ -75,6 +97,7 @@ def fetch_ohlcv_year(symbol: str, timeframe: str, year: int) -> pd.DataFrame:
     # Filtra apenas o ano
     df = df.loc[(df.index.year >= year) & (df.index.year <= year)]
     return df
+
 
 def build_month_ranges(year):
     """Retorna lista de tuplas (início do mês, fim do mês) para o ano."""
@@ -94,15 +117,25 @@ def run():
 
     for symbol in SYMBOLS:
         for timeframe in TIMEFRAMES:
-            for max_loss, min_extreme in itertools.product(MAX_LOSS_VALUES, MIN_PERCENT_EXTREME_VALUES):
-                print(f"\n🔹 Running backtest for {symbol} | TF={timeframe} | MaxLoss={max_loss}% | MinExtreme={min_extreme}%")
+            for max_loss, min_extreme in itertools.product(
+                MAX_LOSS_VALUES,
+                MIN_PERCENT_EXTREME_VALUES
+            ):
+                print(
+                    f"\n🔹 Running backtest for {symbol} | TF={timeframe} "
+                    f"| MaxLoss={max_loss}% | MinExtreme={min_extreme}%"
+                )
 
                 all_years_positive = True
 
                 for year in range(START_YEAR, END_YEAR + 1):
                     df_full = fetch_ohlcv_year(symbol, timeframe, year)
+
                     if df_full.empty or len(df_full) < LOOKBACK + 20:
-                        print(f"⚠️ Insufficient data for {symbol} {year} {timeframe}, skipping.")
+                        print(
+                            f"⚠️ Insufficient data for {symbol} "
+                            f"{year} {timeframe}, skipping."
+                        )
                         all_years_positive = False
                         continue
 
@@ -112,16 +145,16 @@ def run():
 
                     for month_start, month_end in month_ranges:
                         df_month = df_full.loc[month_start:month_end]
+
                         if len(df_month) < LOOKBACK + 10:
                             all_months_positive = False
                             continue
 
-                        # Executa a estratégia com os parâmetros da grid
                         entries_l, exits_l, entries_s, exits_s = backtest_strategy(
                             df_month,
                             lookback=LOOKBACK,
                             max_loss_percent=max_loss,
-                            min_percent_from_extreme=min_extreme  # ✅ agora dinâmico
+                            min_percent_from_extreme=min_extreme
                         )
 
                         portfolio = vbt.Portfolio.from_signals(
@@ -134,15 +167,21 @@ def run():
                             freq=timeframe
                         )
 
-                        # Retorno anual aproximado acumulado
                         annual_return += portfolio.total_return() * 100
+
                         if portfolio.total_return() <= 0:
                             all_months_positive = False
 
                     print(
-                        f"▶ Processed | Symbol={symbol} | Year={year} | TF={timeframe} "
-                        f"| MaxLoss={max_loss}% | MinExtreme={min_extreme}% | AnnualReturn={annual_return:.2f}%"
-                        + (" ✅ ALL MONTHS POSITIVE" if all_months_positive else "")
+                        f"▶ Processed | Symbol={symbol} | Year={year} "
+                        f"| TF={timeframe} | MaxLoss={max_loss}% "
+                        f"| MinExtreme={min_extreme}% "
+                        f"| AnnualReturn={annual_return:.2f}%"
+                        + (
+                            " ✅ ALL MONTHS POSITIVE"
+                            if all_months_positive
+                            else ""
+                        )
                     )
 
                     if not all_months_positive:
@@ -157,13 +196,14 @@ def run():
                     })
 
     # ============================================================
-    # RELATÓRIO FINAL
+    # FINAL REPORT
     # ============================================================
-    print("\n\n✅ Combinations with all years positive (2020-2025):")
+    print("\n\n✅ Combinations with all years positive:")
     for combo in positive_combinations:
         print(
             f"Symbol={combo['symbol']} | TF={combo['timeframe']} "
-            f"| MaxLoss={combo['max_loss_percent']}% | MinExtreme={combo['min_percent_from_extreme']}%"
+            f"| MaxLoss={combo['max_loss_percent']}% "
+            f"| MinExtreme={combo['min_percent_from_extreme']}%"
         )
 
 # ============================================================

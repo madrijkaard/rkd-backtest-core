@@ -1,44 +1,50 @@
 # =========================================================
-# General backtester configuration
+# GLOBAL BACKTEST CONFIGURATION
+# =========================================================
+# Este arquivo contém APENAS configurações globais:
+# - Exchange
+# - Símbolos
+# - Timeframes
+# - Datas
+# - Execução
+# - Output
+#
+# Nenhuma lógica de estratégia deve aparecer aqui.
 # =========================================================
 
+# ---------------------------------------------------------
+# Exchange configuration
+# ---------------------------------------------------------
 exchange:
-  name: binance           # Supported exchange names: binance, bybit, huobi, coinbase
-  market: futures         # Market type: spot, futures, or coinm (coin-margined futures)
-  quote_asset: USDT       # Quote currency
+  name: binance          # binance | bybit | huobi | coinbase
+  market: futures        # spot | futures | coinm
 
+# ---------------------------------------------------------
+# Symbols & Timeframes
+# ---------------------------------------------------------
 symbols:
-  - ETH/USDT              # List of trading pairs to backtest
+  - ETH/USDT
 
 timeframes:
-  - 30m                    # List of timeframes to backtest (15m, 30m, 1h, 4h)
+  - 30m
 
+# ---------------------------------------------------------
+# Date range for backtests
+# ---------------------------------------------------------
 date_range:
   start_year: 2020
   start_month: 1
-  end_year: 2025
+  end_year: 2024
   end_month: 12
 
+# ---------------------------------------------------------
+# Execution parameters
+# ---------------------------------------------------------
 execution:
-  initial_balance: 1000.0   # Starting capital
-  max_loss_percent: 1.5     # Maximum allowed stop loss percentage (e.g., 1.0 = 1%)
+  initial_balance: 1000.0
 
-strategy:
-  name: log_zones_activity
-  lookback_candles: 200
-
-  zones:
-    total: 8               # Total number of logarithmic zones
-    top_active: 3          # Number of most active zones
-    bottom_active: 2       # Number of least active zones
-
-  activity:
-    min_percent_from_extreme: 55.0  # Minimum accumulation percentage to validate a trade
-
-  targets:
-    take_profit_zones_ahead: 2      # Take profit in how many zones ahead
-    stop_loss_zones_behind: 2       # Stop loss in how many zones behind
-
+# ---------------------------------------------------------
+# Output configuration
+# ---------------------------------------------------------
 output:
-  folder: backtest_results          # Folder where results will be saved
-  export_excel: true                # Export results to Excel
+  folder: output
