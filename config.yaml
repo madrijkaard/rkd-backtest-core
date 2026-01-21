@@ -27,6 +27,7 @@ symbols:
 
 timeframes:
   - 30m
+  - 1h
 
 # ---------------------------------------------------------
 # Date range for backtests
