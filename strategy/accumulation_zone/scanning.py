@@ -1,21 +1,26 @@
-# grid_search_positive_years.py
+# strategy/accumulation_zone/grid_search_positive_years.py
 
+import os
+import sys
 import pandas as pd
 import itertools
 from tqdm import tqdm
 import vectorbt as vbt
 import yaml
-import os
 
+# ============================================================
+# Ajuste de import para exchange.py (dois níveis acima)
+# ============================================================
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../")))
 from exchange import get_exchange
-from strategy.accumulation_zone.log_zones_activity import backtest_strategy
+from accumulation_zone import backtest_strategy
 
 # ============================================================
 # LOAD GLOBAL CONFIG
 # ============================================================
 BASE_DIR = os.path.dirname(__file__)
 
-GLOBAL_CONFIG_PATH = os.path.join(BASE_DIR, "config.yaml")
+GLOBAL_CONFIG_PATH = os.path.join(BASE_DIR, "../../config.yaml")
 with open(GLOBAL_CONFIG_PATH, "r", encoding="utf-8") as f:
     global_config = yaml.safe_load(f)
 
@@ -30,10 +35,7 @@ END_YEAR = date_cfg["end_year"]
 # ============================================================
 # LOAD STRATEGY CONFIG (ACCUMULATION ZONE)
 # ============================================================
-STRATEGY_CONFIG_PATH = os.path.join(
-    BASE_DIR, "strategy", "accumulation_zone", "config.yaml"
-)
-
+STRATEGY_CONFIG_PATH = os.path.join(BASE_DIR, "config.yaml")
 with open(STRATEGY_CONFIG_PATH, "r", encoding="utf-8") as f:
     strategy_config = yaml.safe_load(f)
 
@@ -44,11 +46,10 @@ MAX_LOSS_PERCENT = strategy_params.get("max_loss_percent", None)
 MIN_PERCENT_FROM_EXTREME = strategy_params["activity"].get("min_percent_from_extreme", 55.0)
 
 # ============================================================
-# GRID SEARCH PARAMETERS (CONTROLLED IN CODE – AS ORIGINAL)
+# GRID SEARCH PARAMETERS
 # ============================================================
-# Você pode sobrescrever MAX_LOSS_PERCENT ou MIN_PERCENT_FROM_EXTREME aqui
-MAX_LOSS_VALUES = [MAX_LOSS_PERCENT] if MAX_LOSS_PERCENT is not None else [1.5]  # percent
-MIN_PERCENT_EXTREME_VALUES = [40.0, 45.0, 50.0, 55.0, 60.0]  # percent
+MAX_LOSS_VALUES = [MAX_LOSS_PERCENT] if MAX_LOSS_PERCENT is not None else [1.5]
+MIN_PERCENT_EXTREME_VALUES = [40.0, 45.0, 50.0, 55.0, 60.0]
 
 # ============================================================
 # EXCHANGE

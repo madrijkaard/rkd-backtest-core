@@ -11,7 +11,7 @@ from datetime import datetime, timezone, date
 from dateutil.relativedelta import relativedelta
 
 from exchange import get_exchange
-from strategy.accumulation_zone.log_zones_activity import (
+from strategy.accumulation_zone.accumulation_zone import (
     log_zones_activity_strategy
 )
 
