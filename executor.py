@@ -171,7 +171,7 @@ def run():
     os.makedirs(OUTPUT_FOLDER, exist_ok=True)
 
     for symbol in SYMBOLS:
-        print(f"\n⚙️ Running backtest for {symbol}")
+        print(f"\n⚙️  Running backtest for {symbol}")
 
         output_file = os.path.join(
             OUTPUT_FOLDER,
@@ -182,7 +182,7 @@ def run():
             os.remove(output_file)
 
         for timeframe in TIMEFRAMES:
-            print(f"\n⏱ Timeframe: {timeframe}")
+            print(f"\n⏱  Timeframe: {timeframe}")
 
             all_monthly_stats = []
 

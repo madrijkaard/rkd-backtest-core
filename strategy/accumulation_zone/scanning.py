@@ -1,4 +1,4 @@
-# strategy/accumulation_zone/grid_search_positive_years.py
+# strategy/accumulation_zone/scanning.py
 
 import os
 import sys
@@ -48,7 +48,7 @@ MIN_PERCENT_FROM_EXTREME = strategy_params["activity"].get("min_percent_from_ext
 # ============================================================
 # GRID SEARCH PARAMETERS
 # ============================================================
-MAX_LOSS_VALUES = [MAX_LOSS_PERCENT] if MAX_LOSS_PERCENT is not None else [1.5]
+MAX_LOSS_VALUES = [MAX_LOSS_PERCENT] if MAX_LOSS_PERCENT is not None else [1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0]
 MIN_PERCENT_EXTREME_VALUES = [40.0, 45.0, 50.0, 55.0, 60.0]
 
 # ============================================================

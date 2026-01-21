@@ -23,7 +23,7 @@ exchange:
 # Symbols & Timeframes
 # ---------------------------------------------------------
 symbols:
-  - ETH/USDT
+  - SOL/USDT
 
 timeframes:
   - 30m

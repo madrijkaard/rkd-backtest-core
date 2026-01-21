@@ -9,7 +9,7 @@ set -e
 # This script MUST be sourced
 # -------------------------------------------------------------------
 (return 0 2>/dev/null) || {
-    echo "⚠️  This script must be executed with:"
+    echo "⚠️ This script must be executed with:"
     echo "    source venv.sh [-u]"
     return 1
 }
@@ -40,7 +40,7 @@ fi
 # -------------------------------------------------------------------
 # Activate virtual environment
 # -------------------------------------------------------------------
-echo "🐍 Activating virtual environment..."
+echo -e "\n🐍 Activating virtual environment..."
 
 if [[ "$OSTYPE" == msys* || "$OSTYPE" == cygwin* || "$OSTYPE" == win32* ]]; then
     source venv/Scripts/activate
@@ -51,7 +51,7 @@ fi
 # -------------------------------------------------------------------
 # Upgrade pip (safe on Windows)
 # -------------------------------------------------------------------
-echo "⬆️  Upgrading pip..."
+echo -e "\n🔄 Upgrading pip..."
 python -m pip install --upgrade pip
 
 # -------------------------------------------------------------------
@@ -63,17 +63,17 @@ if $UPDATE_REQS; then
         python -m pip install -r requirements.txt
         echo "✅ Dependencies installed!"
     else
-        echo "⚠️  requirements.txt not found. Skipping dependency installation."
+        echo "⚠️ requirements.txt not found. Skipping dependency installation."
     fi
 else
-    echo "ℹ️  Skipping dependency installation."
-    echo "    Use: source venv.sh -u"
+    echo -e "\n⏭️  Skipping dependency installation."
+    echo "   Use: source venv.sh -u"
 fi
 
 # -------------------------------------------------------------------
 # Run backtest executor
 # -------------------------------------------------------------------
-echo "🚀 Running executor.py..."
+echo -e "\n🚀 Running executor.py..."
 
 if ! python executor.py; then
     echo ""
