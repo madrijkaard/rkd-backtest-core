@@ -4,18 +4,19 @@
 ![VectorBT](https://img.shields.io/badge/VectorBT-Powered-orange?style=flat-square)
 ![License](https://img.shields.io/badge/license-MIT-green?style=flat-square)
 
-Backtesting system for cryptocurrencies focused on strategies using **logarithmic price zones**. Supports multiple exchanges via CCXT, multiple timeframes, and automatic export of results to Excel spreadsheets.
+A cryptocurrency backtesting system focused on **logarithmic price zone strategies**. Supports multiple exchanges via CCXT, multiple timeframes, automatic export of results to Excel, and parameter grid search.
 
 ---
 
 ## ⚙️ Technologies Used
 
 * **[Python 3.10+](https://www.python.org/)**
-* **[CCXT](https://github.com/ccxt/ccxt)** – For historical data from exchanges
-* **[VectorBT](https://vectorbt.dev/)** – Backtesting, performance metrics, and portfolio simulation
+* **[CCXT](https://github.com/ccxt/ccxt)** – Historical market data from exchanges
+* **[VectorBT](https://vectorbt.dev/)** – Portfolio simulation and performance metrics
 * **[Pandas](https://pandas.pydata.org/)** + **[NumPy](https://numpy.org/)**
-* **[OpenPyXL](https://openpyxl.readthedocs.io/)** – Excel spreadsheet generation
-* **[TQDM](https://tqdm.github.io/)** – Terminal progress bar
+* **[OpenPyXL](https://openpyxl.readthedocs.io/)** – Excel export
+* **[TQDM](https://tqdm.github.io/)** – Terminal progress bars
+* **[PyYAML](https://pyyaml.org/)** – YAML configuration files
 
 ---
 
@@ -23,30 +24,65 @@ Backtesting system for cryptocurrencies focused on strategies using **logarithmi
 
 ```
 .
-├── config.yaml                  # Configuration file with backtest parameters
-├── exchange.py                 # Selects exchange via CCXT
-├── executor.py                 # Main script to run the backtest
+├── config.yaml                        # Global backtest configuration (exchange, symbols, timeframes, dates, output)
+├── exchange.py                         # Select exchange via CCXT
+├── executor.py                         # Main script to run monthly backtests
 ├── strategy/
-│   ├── strategy.py             # Abstract base strategy and trade structure
-│   └── log_zones_activity.py   # Logarithmic zone strategy
-├── requirements.txt            # Project dependencies
-├── venv.sh                     # Script to activate virtual environment and run the project
-└── backtest/                   # (generated) Folder with Excel result files
+│   ├── accumulation_zone/
+│   │   ├── accumulation_zone.py       # Log_zones_activity strategy
+│   │   ├── config.yaml                # Strategy-specific parameters
+│   │   └── scanning.py                # Grid search for positive parameter combinations
+├── requirements.txt                    # Project dependencies
+├── README.md                           # This file
+└── backtest/                           # (generated) Excel files with backtest results
 ```
-
-### File Descriptions
-
-* **`config.yaml`**: Defines cryptos, timeframes, lookback window, exchange, and other settings.
-* **`exchange.py`**: Loads the chosen exchange and instantiates a `ccxt` client.
-* **`executor.py`**: Controls the entire execution flow. Iterates dates, applies strategy, exports results.
-* **`strategy/log_zones_activity.py`**: Main strategy using logarithmic zones.
-* **`venv.sh`**: Automates environment activation, dependency installation, and execution.
 
 ---
 
-## ▶️ How to Run the Project
+## 📄 File Descriptions
 
-### 1. Clone the Repository
+* **`config.yaml`** – Global backtest configuration:
+
+  * Exchange and market type (`spot`/`futures`/`coinm`)
+  * Symbols to backtest
+  * Timeframes
+  * Start and end dates
+  * Initial balance and output folder
+
+* **`exchange.py`** – Loads the configured exchange and returns a `ccxt` client.
+
+* **`executor.py`** – Executes backtests:
+
+  * Downloads OHLCV for each symbol and timeframe
+  * Splits data into monthly intervals
+  * Applies `log_zones_activity_strategy`
+  * Simulates portfolios with VectorBT
+  * Exports monthly statistics to Excel
+
+* **`strategy/accumulation_zone/accumulation_zone.py`** – Strategy implementation:
+
+  * Computes **logarithmic zones**
+  * Measures zone activity
+  * Defines LONG/SHORT entries, stop loss, and take profit based on zones
+  * Prevents position conflicts
+
+* **`strategy/accumulation_zone/config.yaml`** – Strategy parameters:
+
+  * `lookback_candles`, `max_loss_percent`
+  * Zones configuration and activity filters
+  * Targets based on zones
+
+* **`strategy/accumulation_zone/scanning.py`** – Parameter grid search:
+
+  * Tests `max_loss_percent` × `min_percent_from_extreme` combinations
+  * Identifies parameter sets that yield positive returns in all months for each year
+  * Prints results in the console
+
+---
+
+## ▶️ How to Run
+
+### 1. Clone the repository
 
 ```bash
 git clone https://github.com/yourusername/crypto-backtester.git
@@ -55,34 +91,37 @@ cd crypto-backtester
 
 ### 2. Configure `config.yaml`
 
-Example content:
-
 ```yaml
 exchange:
   name: binance
   market: futures
-  quote_asset: USDT
 
 symbols:
   - ETH/USDT
 
 timeframes:
-  - 15m
-  - 1h
+  - 30m
 
 date_range:
-  start_year: 2020
+  start_year: 2019
   start_month: 1
-  end_year: 2020
+  end_year: 2025
   end_month: 12
 
 execution:
   initial_balance: 1000.0
-  max_loss_percent: 1.0
 
+output:
+  folder: backtest
+```
+
+### 3. Configure strategy (`strategy/accumulation_zone/config.yaml`)
+
+```yaml
 strategy:
   name: log_zones_activity
   lookback_candles: 200
+  max_loss_percent: 1.5
 
   zones:
     total: 8
@@ -90,90 +129,62 @@ strategy:
     bottom_active: 2
 
   activity:
-    min_percent_from_extreme: 40.0
+    min_percent_from_extreme: 55.0
 
   targets:
     take_profit_zones_ahead: 2
     stop_loss_zones_behind: 2
-
-output:
-  folder: backtest_results
-  export_excel: true
 ```
 
-### 3. Run the `venv.sh` Script
-
-Use the command below to activate the virtual environment and automatically execute the project:
+### 4. Install dependencies
 
 ```bash
-source venv.sh
+pip install -r requirements.txt
 ```
 
-> 💡 **Important:** The script must be executed with `source` to work correctly.
+### 5. Run the backtest
+
+```bash
+python executor.py
+```
+
+> 💡 Excel files will be generated per symbol and timeframe in the configured output folder.
+
+### 6. Run Grid Search for Positive Parameters
+
+```bash
+python strategy/accumulation_zone/scanning.py
+```
+
+> 💡 Prints all parameter combinations that produced positive returns for all months in each year.
 
 ---
 
-## 📄 Output Example
+## 📄 Output
 
-After execution, `.xlsx` files will be saved in `backtest_results/`, containing:
+* Excel files in `backtest/`:
 
-* One row per analyzed month
-* Metrics calculated by `VectorBT`
+  * One file per symbol
+  * One sheet per timeframe
+  * Rows represent months
+  * Metrics computed by VectorBT (return, drawdown, Sharpe ratio, etc.)
 
-> Note: The project no longer generates `_signals.xlsx` or `_trades.xlsx`. Only **monthly statistics** are exported.
+* Grid search prints **combinations with all years positive** to the console.
 
 ---
 
 ## 💡 Strategy: Logarithmic Zones Activity
 
-The `log_zones_activity` strategy uses price zones calculated via logarithmic transformations of the **rolling min and max** over a window (`lookback`). It includes rules such as:
+* Calculates **logarithmic price zones** using the last `lookback_candles`
+* Identifies **most active** and **least active zones**
+* LONG/SHORT entries only occur if:
 
-* Identifies **top3 zones most active in sequence**
-* Avoids trades if **activity is below threshold**
-* LONG entry occurs after **price crosses above central zone**
-* SHORT entry occurs after **price crosses below central zone**
-* Stop loss and take profit defined by zones behind/ahead
-* Logic resets each month
-
----
-
-## 📈 Adding New Strategies
-
-1. Create a new file in `strategy/`, e.g. `my_strategy.py`
-2. Define a function with the signature:
-
-```python
-def my_strategy(close: pd.Series, lookback: int, freq: str) -> vbt.Portfolio:
-    ...
-```
-
-3. In `executor.py`, import and replace the strategy function:
-
-```python
-from strategy.my_strategy import my_strategy
-
-# Replace:
-# strategy_func=backtest_strategy
-# With:
-strategy_func=my_strategy
-```
-
----
-
-## 🧪 Understanding LOOKBACK and Candle Limit
-
-Each month, the script fetches up to **1000 candles** for the given timeframe:
-
-| Timeframe | Coverage with 1000 candles |
-| --------- | -------------------------- |
-| `15m`     | ~10 days                   |
-| `1h`      | ~41 days                   |
-| `4h`      | ~166 days (~5.5 months)    |
-| `1d`      | ~2.7 years                 |
-
-* The first `LOOKBACK` candles are used to compute zones.
-* The rest is used to simulate trades and evaluate performance.
-* If there aren’t enough candles, the month is skipped.
+  * Price crosses central zone
+  * Adjacent zones are not blocked
+  * Minimum distance from last extreme is respected
+  * Maximum stop loss is not exceeded
+* Stop loss and take profit are zone-based
+* Conflicting positions are prevented
 
 ---
 
@@ -181,8 +192,8 @@ Each month, the script fetches up to **1000 candles** for the given timeframe:
 
 * [ ] Add more exchanges (KuCoin, OKX, etc.)
 * [ ] Parallel execution using `ThreadPoolExecutor`
-* [ ] Export charts with `vectorbt.plot()`
-* [ ] Cache OHLCV data locally to reduce API calls
+* [ ] Export trade charts with `vectorbt.plot()`
+* [ ] Cache OHLCV data locally
 * [ ] Web interface for uploading and running strategies
 
 ---
