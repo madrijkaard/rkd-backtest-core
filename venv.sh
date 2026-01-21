@@ -51,7 +51,7 @@ fi
 # -------------------------------------------------------------------
 # Upgrade pip (safe on Windows)
 # -------------------------------------------------------------------
-echo -e "\n🔄 Upgrading pip..."
+echo -e "\n🔄 Upgrading pip... \n"
 python -m pip install --upgrade pip
 
 # -------------------------------------------------------------------
@@ -59,15 +59,14 @@ python -m pip install --upgrade pip
 # -------------------------------------------------------------------
 if $UPDATE_REQS; then
     if [[ -f "requirements.txt" ]]; then
-        echo "📄 Installing dependencies from requirements.txt..."
+        echo -e "\n📄 Installing dependencies from requirements.txt... \n"
         python -m pip install -r requirements.txt
-        echo "✅ Dependencies installed!"
+        echo -e "\n✅ Dependencies installed!"
     else
         echo "⚠️ requirements.txt not found. Skipping dependency installation."
     fi
 else
     echo -e "\n⏭️  Skipping dependency installation."
-    echo "   Use: source venv.sh -u"
 fi
 
 # -------------------------------------------------------------------

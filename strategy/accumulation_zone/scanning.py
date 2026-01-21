@@ -42,13 +42,11 @@ with open(STRATEGY_CONFIG_PATH, "r", encoding="utf-8") as f:
 strategy_params = strategy_config["strategy"]
 
 LOOKBACK = strategy_params.get("lookback_candles", 200)
-MAX_LOSS_PERCENT = strategy_params.get("max_loss_percent", None)
-MIN_PERCENT_FROM_EXTREME = strategy_params["activity"].get("min_percent_from_extreme", 55.0)
 
 # ============================================================
 # GRID SEARCH PARAMETERS
 # ============================================================
-MAX_LOSS_VALUES = [MAX_LOSS_PERCENT] if MAX_LOSS_PERCENT is not None else [1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0]
+MAX_LOSS_VALUES = [0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0]
 MIN_PERCENT_EXTREME_VALUES = [40.0, 45.0, 50.0, 55.0, 60.0]
 
 # ============================================================
