@@ -85,8 +85,8 @@ A cryptocurrency backtesting system focused on **logarithmic price zone strategi
 ### 1. Clone the repository
 
 ```bash
-git clone https://github.com/yourusername/crypto-backtester.git
-cd crypto-backtester
+git clone https://github.com/madrijkaard/rkd-backtest-core.git
+cd rkd-backtest-core
 ```
 
 ### 2. Configure `config.yaml`
