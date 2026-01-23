@@ -112,7 +112,7 @@ execution:
   initial_balance: 1000.0
 
 output:
-  folder: backtest
+  folder: output
 ```
 
 ### 3. Configure strategy (`strategy/accumulation_zone/config.yaml`)
