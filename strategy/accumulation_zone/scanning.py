@@ -26,28 +26,27 @@ with open(GLOBAL_CONFIG_PATH, "r", encoding="utf-8") as f:
 
 SYMBOLS = global_config["symbols"]
 TIMEFRAMES = global_config["timeframes"]
-INITIAL_BALANCE = global_config["execution"].get("initial_balance", 10000)
+INITIAL_BALANCE = global_config["execution"].get("initial_balance", 1000.0)
 
 date_cfg = global_config["date_range"]
 START_YEAR = date_cfg["start_year"]
 END_YEAR = date_cfg["end_year"]
 
 # ============================================================
-# LOAD STRATEGY CONFIG (ACCUMULATION ZONE)
+# LOAD STRATEGY CONFIG
 # ============================================================
 STRATEGY_CONFIG_PATH = os.path.join(BASE_DIR, "config.yaml")
 with open(STRATEGY_CONFIG_PATH, "r", encoding="utf-8") as f:
     strategy_config = yaml.safe_load(f)
 
 strategy_params = strategy_config["strategy"]
-
 LOOKBACK = strategy_params.get("lookback_candles", 200)
 
 # ============================================================
 # GRID SEARCH PARAMETERS
 # ============================================================
-MAX_LOSS_VALUES = [0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0]
-MIN_PERCENT_EXTREME_VALUES = [40.0, 45.0, 50.0, 55.0, 60.0]
+MAX_LOSS_VALUES = [1.5]
+MIN_PERCENT_EXTREME_VALUES = [55.0]
 
 # ============================================================
 # EXCHANGE
@@ -59,7 +58,6 @@ exchange = get_exchange()
 # ============================================================
 
 def fetch_ohlcv_year(symbol: str, timeframe: str, year: int) -> pd.DataFrame:
-    """Carrega OHLCV do símbolo diretamente no timeframe desejado e filtra pelo ano."""
     start_date = pd.Timestamp(year=year, month=1, day=1)
     end_date = pd.Timestamp(year=year, month=12, day=31, hour=23, minute=59)
 
@@ -93,13 +91,10 @@ def fetch_ohlcv_year(symbol: str, timeframe: str, year: int) -> pd.DataFrame:
     df.set_index("timestamp", inplace=True)
     df.index = df.index.tz_convert(None)
 
-    # Filtra apenas o ano
-    df = df.loc[(df.index.year >= year) & (df.index.year <= year)]
-    return df
+    return df.loc[df.index.year == year]
 
 
-def build_month_ranges(year):
-    """Retorna lista de tuplas (início do mês, fim do mês) para o ano."""
+def build_month_ranges(year: int):
     ranges = []
     for month in range(1, 13):
         start = pd.Timestamp(year, month, 1)
@@ -108,12 +103,10 @@ def build_month_ranges(year):
     return ranges
 
 # ============================================================
-# MAIN GRID SEARCH
+# MAIN
 # ============================================================
 
 def run():
-    positive_combinations = []
-
     for symbol in SYMBOLS:
         for timeframe in TIMEFRAMES:
             for max_loss, min_extreme in itertools.product(
@@ -121,32 +114,28 @@ def run():
                 MIN_PERCENT_EXTREME_VALUES
             ):
                 print(
-                    f"\n🔹 Running backtest for {symbol} | TF={timeframe} "
+                    f"\n🔹 START | {symbol} | TF={timeframe} "
                     f"| MaxLoss={max_loss}% | MinExtreme={min_extreme}%"
                 )
 
-                all_years_positive = True
+                capital = INITIAL_BALANCE
+                initial_global_capital = INITIAL_BALANCE
+                survived = True
 
                 for year in range(START_YEAR, END_YEAR + 1):
-                    df_full = fetch_ohlcv_year(symbol, timeframe, year)
+                    df_year = fetch_ohlcv_year(symbol, timeframe, year)
 
-                    if df_full.empty or len(df_full) < LOOKBACK + 20:
-                        print(
-                            f"⚠️ Insufficient data for {symbol} "
-                            f"{year} {timeframe}, skipping."
-                        )
-                        all_years_positive = False
-                        continue
+                    if df_year.empty or len(df_year) < LOOKBACK + 20:
+                        print(f"⚠️ Insufficient data for {symbol} {year}")
+                        survived = False
+                        break
 
-                    month_ranges = build_month_ranges(year)
-                    annual_return = 0.0
-                    all_months_positive = True
+                    capital_start_year = capital
 
-                    for month_start, month_end in month_ranges:
-                        df_month = df_full.loc[month_start:month_end]
+                    for month_start, month_end in build_month_ranges(year):
+                        df_month = df_year.loc[month_start:month_end]
 
                         if len(df_month) < LOOKBACK + 10:
-                            all_months_positive = False
                             continue
 
                         entries_l, exits_l, entries_s, exits_s = backtest_strategy(
@@ -162,48 +151,42 @@ def run():
                             exits=exits_l,
                             short_entries=entries_s,
                             short_exits=exits_s,
-                            init_cash=INITIAL_BALANCE,
+                            init_cash=capital,
+                            size=1.0,   # 100% do capital
                             freq=timeframe
                         )
 
-                        annual_return += portfolio.total_return() * 100
+                        monthly_return = portfolio.total_return()
+                        capital *= (1 + monthly_return)
 
-                        if portfolio.total_return() <= 0:
-                            all_months_positive = False
+                        if capital <= 0:
+                            survived = False
+                            break
+
+                    annual_return = (capital / capital_start_year) - 1
+                    total_return = (capital / initial_global_capital) - 1
 
                     print(
-                        f"▶ Processed | Symbol={symbol} | Year={year} "
-                        f"| TF={timeframe} | MaxLoss={max_loss}% "
-                        f"| MinExtreme={min_extreme}% "
-                        f"| AnnualReturn={annual_return:.2f}%"
-                        + (
-                            " ✅ ALL MONTHS POSITIVE"
-                            if all_months_positive
-                            else ""
-                        )
+                        f"▶ {year} | "
+                        f"FinalBalance={capital:.2f} | "
+                        f"AnnualReturn={annual_return * 100:.2f}% | "
+                        f"TotalReturn={total_return * 100:.2f}%"
                     )
 
-                    if not all_months_positive:
-                        all_years_positive = False
+                    if not survived:
+                        break
 
-                if all_years_positive:
-                    positive_combinations.append({
-                        "symbol": symbol,
-                        "timeframe": timeframe,
-                        "max_loss_percent": max_loss,
-                        "min_percent_from_extreme": min_extreme
-                    })
-
-    # ============================================================
-    # FINAL REPORT
-    # ============================================================
-    print("\n\n✅ Combinations with all years positive:")
-    for combo in positive_combinations:
-        print(
-            f"Symbol={combo['symbol']} | TF={combo['timeframe']} "
-            f"| MaxLoss={combo['max_loss_percent']}% "
-            f"| MinExtreme={combo['min_percent_from_extreme']}%"
-        )
+                if survived:
+                    print(
+                        f"✅ SURVIVED | {symbol} | TF={timeframe} "
+                        f"| MaxLoss={max_loss}% | MinExtreme={min_extreme}% "
+                        f"| FinalCapital={capital:.2f}"
+                    )
+                else:
+                    print(
+                        f"❌ BROKE | {symbol} | TF={timeframe} "
+                        f"| MaxLoss={max_loss}% | MinExtreme={min_extreme}%"
+                    )
 
 # ============================================================
 # ENTRY POINT
