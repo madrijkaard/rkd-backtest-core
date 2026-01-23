@@ -162,7 +162,7 @@ python strategy/accumulation_zone/scanning.py
 
 ## 📄 Output
 
-* Excel files in `backtest/`:
+* Excel files in `output/`:
 
   * One file per symbol
   * One sheet per timeframe
