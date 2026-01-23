@@ -204,4 +204,4 @@ Distributed under the [MIT License](LICENSE).
 
 ---
 
-Made with 💙 by [Your Name or GitHub](https://github.com/yourusername)
+Made with 💙 by [Rijkaard Balduíno or GitHub](https://github.com/madrijkaard)
