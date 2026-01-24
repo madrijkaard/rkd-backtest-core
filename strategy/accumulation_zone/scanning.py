@@ -45,8 +45,8 @@ LOOKBACK = strategy_params.get("lookback_candles", 200)
 # ============================================================
 # GRID SEARCH PARAMETERS
 # ============================================================
-MAX_LOSS_VALUES = [1.5]
-MIN_PERCENT_EXTREME_VALUES = [55.0]
+MAX_LOSS_VALUES = [6.0, 10.0]
+MIN_PERCENT_EXTREME_VALUES = [40.0, 45.0, 50.0, 55.0]
 
 # ============================================================
 # EXCHANGE
