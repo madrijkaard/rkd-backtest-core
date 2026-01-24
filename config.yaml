@@ -13,11 +13,10 @@ exchange:
 # Symbols & Timeframes
 # ---------------------------------------------------------
 symbols:
-  - ETH/USDT
+  - LTC/USDT
 
 timeframes:
   - 30m
-  - 1h
 
 # ---------------------------------------------------------
 # Date range for backtests

@@ -45,7 +45,7 @@ LOOKBACK = strategy_params.get("lookback_candles", 200)
 # ============================================================
 # GRID SEARCH PARAMETERS
 # ============================================================
-MAX_LOSS_VALUES = [6.0, 10.0]
+MAX_LOSS_VALUES = [1.0, 1.5, 2.0, 2.5]
 MIN_PERCENT_EXTREME_VALUES = [40.0, 45.0, 50.0, 55.0]
 
 # ============================================================
@@ -66,7 +66,10 @@ def fetch_ohlcv_year(symbol: str, timeframe: str, year: int) -> pd.DataFrame:
 
     ohlcv = []
 
-    with tqdm(desc=f"Downloading {symbol} {timeframe} {year}", unit="batch") as pbar:
+    with tqdm(
+        desc=f"Downloading {symbol} {timeframe} {year}",
+        unit="batch"
+    ) as pbar:
         while since < end_ts:
             batch = exchange.fetch_ohlcv(
                 symbol=symbol,
@@ -119,15 +122,13 @@ def run():
                 )
 
                 capital = INITIAL_BALANCE
-                initial_global_capital = INITIAL_BALANCE
-                survived = True
+                initial_balance = INITIAL_BALANCE
 
                 for year in range(START_YEAR, END_YEAR + 1):
                     df_year = fetch_ohlcv_year(symbol, timeframe, year)
 
                     if df_year.empty or len(df_year) < LOOKBACK + 20:
                         print(f"⚠️ Insufficient data for {symbol} {year}")
-                        survived = False
                         break
 
                     capital_start_year = capital
@@ -159,12 +160,8 @@ def run():
                         monthly_return = portfolio.total_return()
                         capital *= (1 + monthly_return)
 
-                        if capital <= 0:
-                            survived = False
-                            break
-
                     annual_return = (capital / capital_start_year) - 1
-                    total_return = (capital / initial_global_capital) - 1
+                    total_return = (capital / initial_balance) - 1
 
                     print(
                         f"▶ {year} | "
@@ -173,10 +170,10 @@ def run():
                         f"TotalReturn={total_return * 100:.2f}%"
                     )
 
-                    if not survived:
-                        break
-
-                if survived:
+                # ====================================================
+                # FINAL SURVIVAL CHECK
+                # ====================================================
+                if capital >= initial_balance:
                     print(
                         f"✅ SURVIVED | {symbol} | TF={timeframe} "
                         f"| MaxLoss={max_loss}% | MinExtreme={min_extreme}% "
@@ -185,7 +182,8 @@ def run():
                 else:
                     print(
                         f"❌ BROKE | {symbol} | TF={timeframe} "
-                        f"| MaxLoss={max_loss}% | MinExtreme={min_extreme}%"
+                        f"| MaxLoss={max_loss}% | MinExtreme={min_extreme}% "
+                        f"| FinalCapital={capital:.2f}"
                     )
 
 # ============================================================

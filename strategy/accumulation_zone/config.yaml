@@ -9,7 +9,7 @@ strategy:
   # Core parameters
   # ---------------------------------------------------------
   lookback_candles: 200          # Number of candles used to calculate the zones
-  max_loss_percent: 1.5          # Maximum allowed stop loss (%). None disables the filter
+  max_loss_percent: 1.0          # Maximum allowed stop loss (%). None disables the filter
 
   # ---------------------------------------------------------
   # Logarithmic zones configuration
@@ -25,7 +25,7 @@ strategy:
   activity:
     # Minimum percentage distance from the last high or low
     # to validate a new trade (prevents entries too early)
-    min_percent_from_extreme: 55.0
+    min_percent_from_extreme: 40.0
     
   # ---------------------------------------------------------
   # Trade targets (based on zones)
