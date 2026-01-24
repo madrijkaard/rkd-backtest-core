@@ -1,4 +1,4 @@
-# strategy/accumulation_zone/log_zones_activity.py
+# strategy/accumulation_zone/accumulation_zone.py
 
 import numpy as np
 import yaml
@@ -8,6 +8,7 @@ import random
 # ============================================================
 # LOAD STRATEGY CONFIG
 # ============================================================
+
 CONFIG_PATH = os.path.join(os.path.dirname(__file__), "config.yaml")
 
 with open(CONFIG_PATH, "r", encoding="utf-8") as f:
@@ -15,9 +16,18 @@ with open(CONFIG_PATH, "r", encoding="utf-8") as f:
 
 STRATEGY_CFG = config["strategy"]
 
+# ----------------------------
+# Core params
+# ----------------------------
 TOTAL_ZONES = STRATEGY_CFG["zones"]["total"]
 TOP_ACTIVE = STRATEGY_CFG["zones"]["top_active"]
 BOTTOM_ACTIVE = STRATEGY_CFG["zones"]["bottom_active"]
+
+# ----------------------------
+# Targets (ZONE OFFSETS)
+# ----------------------------
+TARGET_LONG_OFFSET = STRATEGY_CFG["targets"]["long"]
+TARGET_SHORT_OFFSET = STRATEGY_CFG["targets"]["short"]
 
 # ============================================================
 # Helpers
@@ -27,6 +37,7 @@ def zones_in_sequence(zones):
     zones = sorted(zones)
     return zones[1] == zones[0] + 1 and zones[2] == zones[1] + 1
 
+
 def percentage_since_last_extreme(window):
     high_idx = np.argmax(window)
     low_idx = np.argmin(window)
@@ -34,11 +45,13 @@ def percentage_since_last_extreme(window):
     dist = len(window) - last_extreme_idx - 1
     return (dist / len(window)) * 100
 
+
 def compute_log_zones(price_min, price_max, n_zones):
     log_min = np.log(price_min)
     log_max = np.log(price_max)
     levels = np.linspace(log_min, log_max, n_zones + 1)
     return np.exp(levels)
+
 
 def get_less_active_zones(activity: np.ndarray, bottom_active: int):
     """
@@ -81,6 +94,7 @@ def log_zones_activity_strategy(
 
     in_long = False
     in_short = False
+
     stop_long = None
     stop_short = None
     target_long = None
@@ -122,6 +136,7 @@ def log_zones_activity_strategy(
 
         price_min = window_close.min()
         price_max = window_close.max()
+
         limits = compute_log_zones(price_min, price_max, TOTAL_ZONES)
         activity = np.zeros(TOTAL_ZONES)
 
@@ -135,8 +150,10 @@ def log_zones_activity_strategy(
             for z in range(TOTAL_ZONES):
                 zone_low = limits[z]
                 zone_high = limits[z + 1]
+
                 overlap_low = max(body_low, zone_low)
                 overlap_high = min(body_high, zone_high)
+
                 if overlap_high > overlap_low:
                     activity[z] += (overlap_high - overlap_low) / body_low
 
@@ -153,7 +170,7 @@ def log_zones_activity_strategy(
         central_zone = top_sorted[1]
 
         # ====================================================
-        # Zonas menos ativas
+        # Zonas menos ativas (bloqueio)
         # ====================================================
         less_active_zones = get_less_active_zones(activity, BOTTOM_ACTIVE)
 
@@ -166,14 +183,24 @@ def log_zones_activity_strategy(
         # ====================================================
         # LONG
         # ====================================================
-        if not block_long and central_zone + 2 < TOTAL_ZONES:
-            crossed_up = price_prev <= limits[central_zone + 1] and price_now > limits[central_zone + 1]
+        if not block_long and central_zone + TARGET_LONG_OFFSET < len(limits):
+            crossed_up = (
+                price_prev <= limits[central_zone + 1]
+                and price_now > limits[central_zone + 1]
+            )
+
             if crossed_up:
-                stop_candidate = (limits[central_zone] + limits[central_zone + 1]) / 2
-                target_candidate = limits[central_zone + 3]
+                stop_candidate = (
+                    limits[central_zone] + limits[central_zone + 1]
+                ) / 2
+
+                target_candidate = limits[central_zone + TARGET_LONG_OFFSET]
 
                 if max_loss_percent is not None:
-                    stop_loss_percent = ((price_now - stop_candidate) / price_now) * 100
+                    stop_loss_percent = (
+                        (price_now - stop_candidate) / price_now
+                    ) * 100
+
                     if stop_loss_percent > max_loss_percent:
                         continue
 
@@ -186,14 +213,24 @@ def log_zones_activity_strategy(
         # ====================================================
         # SHORT
         # ====================================================
-        if not block_short and central_zone - 2 >= 0:
-            crossed_down = price_prev >= limits[central_zone] and price_now < limits[central_zone]
+        if not block_short and central_zone - TARGET_SHORT_OFFSET >= 0:
+            crossed_down = (
+                price_prev >= limits[central_zone]
+                and price_now < limits[central_zone]
+            )
+
             if crossed_down:
-                stop_candidate = (limits[central_zone] + limits[central_zone + 1]) / 2
-                target_candidate = limits[central_zone - 2]
+                stop_candidate = (
+                    limits[central_zone] + limits[central_zone + 1]
+                ) / 2
+
+                target_candidate = limits[central_zone - TARGET_SHORT_OFFSET]
 
                 if max_loss_percent is not None:
-                    stop_loss_percent = ((stop_candidate - price_now) / price_now) * 100
+                    stop_loss_percent = (
+                        (stop_candidate - price_now) / price_now
+                    ) * 100
+
                     if stop_loss_percent > max_loss_percent:
                         continue
 
@@ -218,7 +255,7 @@ def log_zones_activity_strategy(
     return entries_long, exits_long, entries_short, exits_short
 
 # ============================================================
-# Wrapper esperado pelo grid_search_positive_years.py
+# Wrapper esperado por outros módulos
 # ============================================================
 
 def backtest_strategy(

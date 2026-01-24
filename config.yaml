@@ -1,16 +1,6 @@
 # =========================================================
 # GLOBAL BACKTEST CONFIGURATION
 # =========================================================
-# Este arquivo contém APENAS configurações globais:
-# - Exchange
-# - Símbolos
-# - Timeframes
-# - Datas
-# - Execução
-# - Output
-#
-# Nenhuma lógica de estratégia deve aparecer aqui.
-# =========================================================
 
 # ---------------------------------------------------------
 # Exchange configuration
