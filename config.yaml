@@ -13,7 +13,7 @@ exchange:
 # Symbols & Timeframes
 # ---------------------------------------------------------
 symbols:
-  - LTC/USDT
+  - ETH/USDT
 
 timeframes:
   - 30m

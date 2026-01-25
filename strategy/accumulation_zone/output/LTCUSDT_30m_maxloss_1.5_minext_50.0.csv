@@ -1,0 +1,7 @@
+Pair,TF,MaxLoss,MinExtreme,Year,FinalBalance,AnnualReturn,TotalReturn,FinalCapital,Status
+LTC/USDT,30m,1.5%,50.0%,2020,991.68,-0.83,-0.83,,
+LTC/USDT,30m,1.5%,50.0%,2021,961.52,-3.04,-3.85,,
+LTC/USDT,30m,1.5%,50.0%,2022,955.36,-0.64,-4.46,,
+LTC/USDT,30m,1.5%,50.0%,2023,954.81,-0.06,-4.52,,
+LTC/USDT,30m,1.5%,50.0%,2024,951.16,-0.38,-4.88,,
+LTC/USDT,30m,1.5%,50.0%,2025,963.21,1.27,-3.68,963.21,❌ BROKE

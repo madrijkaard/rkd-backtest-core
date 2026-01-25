@@ -9,9 +9,11 @@ import vectorbt as vbt
 import yaml
 
 # ============================================================
-# Ajuste de import para exchange.py (dois níveis acima)
+# Ajuste de import para exchange.py (raiz do projeto)
 # ============================================================
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../")))
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../"))
+sys.path.append(PROJECT_ROOT)
+
 from exchange import get_exchange
 from accumulation_zone import backtest_strategy
 
@@ -20,7 +22,7 @@ from accumulation_zone import backtest_strategy
 # ============================================================
 BASE_DIR = os.path.dirname(__file__)
 
-GLOBAL_CONFIG_PATH = os.path.join(BASE_DIR, "../../config.yaml")
+GLOBAL_CONFIG_PATH = os.path.join(PROJECT_ROOT, "config.yaml")
 with open(GLOBAL_CONFIG_PATH, "r", encoding="utf-8") as f:
     global_config = yaml.safe_load(f)
 
@@ -31,6 +33,12 @@ INITIAL_BALANCE = global_config["execution"].get("initial_balance", 1000.0)
 date_cfg = global_config["date_range"]
 START_YEAR = date_cfg["start_year"]
 END_YEAR = date_cfg["end_year"]
+
+# 👉 OUTPUT SEMPRE NA RAIZ DO PROJETO
+OUTPUT_FOLDER = os.path.join(PROJECT_ROOT, global_config["output"]["folder"])
+os.makedirs(OUTPUT_FOLDER, exist_ok=True)
+
+print(f"\n📂 Output folder: {OUTPUT_FOLDER}")
 
 # ============================================================
 # LOAD STRATEGY CONFIG
@@ -45,8 +53,8 @@ LOOKBACK = strategy_params.get("lookback_candles", 200)
 # ============================================================
 # GRID SEARCH PARAMETERS
 # ============================================================
-MAX_LOSS_VALUES = [1.0, 1.5, 2.0, 2.5]
-MIN_PERCENT_EXTREME_VALUES = [40.0, 45.0, 50.0, 55.0]
+MAX_LOSS_VALUES = [2.5]
+MIN_PERCENT_EXTREME_VALUES = [55.0]
 
 # ============================================================
 # EXCHANGE
@@ -66,10 +74,7 @@ def fetch_ohlcv_year(symbol: str, timeframe: str, year: int) -> pd.DataFrame:
 
     ohlcv = []
 
-    with tqdm(
-        desc=f"Downloading {symbol} {timeframe} {year}",
-        unit="batch"
-    ) as pbar:
+    with tqdm(desc=f"Downloading {symbol} {timeframe} {year}", unit="batch") as pbar:
         while since < end_ts:
             batch = exchange.fetch_ohlcv(
                 symbol=symbol,
@@ -98,12 +103,13 @@ def fetch_ohlcv_year(symbol: str, timeframe: str, year: int) -> pd.DataFrame:
 
 
 def build_month_ranges(year: int):
-    ranges = []
-    for month in range(1, 13):
-        start = pd.Timestamp(year, month, 1)
-        end = start + pd.offsets.MonthEnd(1)
-        ranges.append((start, end))
-    return ranges
+    return [
+        (
+            pd.Timestamp(year, month, 1),
+            pd.Timestamp(year, month, 1) + pd.offsets.MonthEnd(1)
+        )
+        for month in range(1, 13)
+    ]
 
 # ============================================================
 # MAIN
@@ -122,7 +128,8 @@ def run():
                 )
 
                 capital = INITIAL_BALANCE
-                initial_balance = INITIAL_BALANCE
+                rows = []
+                broke_early = False
 
                 for year in range(START_YEAR, END_YEAR + 1):
                     df_year = fetch_ohlcv_year(symbol, timeframe, year)
@@ -135,7 +142,6 @@ def run():
 
                     for month_start, month_end in build_month_ranges(year):
                         df_month = df_year.loc[month_start:month_end]
-
                         if len(df_month) < LOOKBACK + 10:
                             continue
 
@@ -153,38 +159,73 @@ def run():
                             short_entries=entries_s,
                             short_exits=exits_s,
                             init_cash=capital,
-                            size=1.0,   # 100% do capital
+                            size=1.0,
                             freq=timeframe
                         )
 
-                        monthly_return = portfolio.total_return()
-                        capital *= (1 + monthly_return)
+                        capital *= (1 + portfolio.total_return())
 
-                    annual_return = (capital / capital_start_year) - 1
-                    total_return = (capital / initial_balance) - 1
+                        if capital <= 0:
+                            print(f"💥 BROKE DURING {year}")
+                            capital = 0.0
+                            broke_early = True
+                            break
+
+                    annual_return = (
+                        (capital / capital_start_year) - 1
+                        if capital_start_year > 0 else -1
+                    )
+                    total_return = (capital / INITIAL_BALANCE) - 1
 
                     print(
-                        f"▶ {year} | "
-                        f"FinalBalance={capital:.2f} | "
+                        f"▶ {year} | FinalBalance={capital:.2f} | "
                         f"AnnualReturn={annual_return * 100:.2f}% | "
                         f"TotalReturn={total_return * 100:.2f}%"
                     )
 
-                # ====================================================
-                # FINAL SURVIVAL CHECK
-                # ====================================================
-                if capital >= initial_balance:
-                    print(
-                        f"✅ SURVIVED | {symbol} | TF={timeframe} "
-                        f"| MaxLoss={max_loss}% | MinExtreme={min_extreme}% "
-                        f"| FinalCapital={capital:.2f}"
+                    rows.append({
+                        "Pair": symbol,
+                        "TF": timeframe,
+                        "MaxLoss": f"{max_loss}%",
+                        "MinExtreme": f"{min_extreme}%",
+                        "Year": year,
+                        "FinalBalance": round(capital, 2),
+                        "AnnualReturn": round(annual_return * 100, 2),
+                        "TotalReturn": round(total_return * 100, 2),
+                        "FinalCapital": None,
+                        "Status": None
+                    })
+
+                    if broke_early:
+                        break
+
+                status = "SURVIVED" if capital >= INITIAL_BALANCE else "BROKE"
+                rows[-1]["FinalCapital"] = round(capital, 2)
+                rows[-1]["Status"] = status
+
+                df_out = pd.DataFrame(rows)
+
+                filename = (
+                    f"{symbol.replace('/', '')}_"
+                    f"{timeframe}_"
+                    f"maxloss_{max_loss}_"
+                    f"minext_{min_extreme}.xlsx"
+                )
+
+                full_path = os.path.join(OUTPUT_FOLDER, filename)
+
+                with pd.ExcelWriter(
+                    full_path,
+                    engine="openpyxl",
+                    mode="w"
+                ) as writer:
+                    df_out.to_excel(
+                        writer,
+                        index=False,
+                        sheet_name="results"
                     )
-                else:
-                    print(
-                        f"❌ BROKE | {symbol} | TF={timeframe} "
-                        f"| MaxLoss={max_loss}% | MinExtreme={min_extreme}% "
-                        f"| FinalCapital={capital:.2f}"
-                    )
+
+                print(f"📊 XLSX GERADO: {full_path}")
 
 # ============================================================
 # ENTRY POINT
