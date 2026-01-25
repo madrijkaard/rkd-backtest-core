@@ -38,8 +38,6 @@ END_YEAR = date_cfg["end_year"]
 OUTPUT_FOLDER = os.path.join(PROJECT_ROOT, global_config["output"]["folder"])
 os.makedirs(OUTPUT_FOLDER, exist_ok=True)
 
-print(f"\n📂 Output folder: {OUTPUT_FOLDER}")
-
 # ============================================================
 # LOAD STRATEGY CONFIG
 # ============================================================
@@ -124,7 +122,7 @@ def run():
             ):
                 print(
                     f"\n🔹 START | {symbol} | TF={timeframe} "
-                    f"| MaxLoss={max_loss}% | MinExtreme={min_extreme}%"
+                    f"| MaxLoss={max_loss}% | MinExtreme={min_extreme}% \n"
                 )
 
                 capital = INITIAL_BALANCE
@@ -225,7 +223,7 @@ def run():
                         sheet_name="results"
                     )
 
-                print(f"\n📊 XLSX GERADO: {full_path}\n")
+                print(f"\n📊 File generated: {full_path}\n")
 
 # ============================================================
 # ENTRY POINT
