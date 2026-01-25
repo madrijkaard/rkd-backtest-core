@@ -225,7 +225,7 @@ def run():
                         sheet_name="results"
                     )
 
-                print(f"📊 XLSX GERADO: {full_path}")
+                print(f"\n📊 XLSX GERADO: {full_path}\n")
 
 # ============================================================
 # ENTRY POINT
