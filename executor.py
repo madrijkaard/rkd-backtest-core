@@ -59,12 +59,12 @@ exchange = get_exchange()
 # HELPERS
 # =========================================================
 
-def build_output_filename(symbol: str) -> str:
+def build_base_filename(symbol: str) -> str:
     symbol_clean = symbol.replace("/", "")
     return (
         f"{symbol_clean}_"
         f"{date_cfg['start_month']}_{date_cfg['start_year']}_"
-        f"{date_cfg['end_month']}_{date_cfg['end_year']}.xlsx"
+        f"{date_cfg['end_month']}_{date_cfg['end_year']}"
     )
 
 
@@ -161,12 +161,17 @@ def run():
     for symbol in SYMBOLS:
         print(f"\n⚙️  Running backtest for {symbol}")
 
+        base_name = build_base_filename(symbol)
+
         stats_file = os.path.join(
             OUTPUT_FOLDER,
-            build_output_filename(symbol)
+            f"{base_name}_strategy.xlsx"
         )
 
-        trades_file = stats_file.replace(".xlsx", "_trades.xlsx")
+        trades_file = os.path.join(
+            OUTPUT_FOLDER,
+            f"{base_name}_trades.xlsx"
+        )
 
         if os.path.exists(stats_file):
             os.remove(stats_file)
@@ -230,7 +235,7 @@ def run():
                 all_monthly_stats.append(stats)
 
                 # -----------------------------
-                # TRADES (COMPATÍVEL COM VECTORBT ANTIGO)
+                # TRADES
                 # -----------------------------
                 records = portfolio.trades.records
 
@@ -242,7 +247,6 @@ def run():
                     trades["year"] = month_start.year
                     trades["month"] = month_start.month
 
-                    # direction: 1 = LONG | -1 = SHORT
                     trades["side"] = trades["direction"].apply(
                         lambda d: "LONG" if d == 1 else "SHORT"
                     )
