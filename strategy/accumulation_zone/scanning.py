@@ -32,7 +32,9 @@ INITIAL_BALANCE = global_config["execution"].get("initial_balance", 1000.0)
 
 date_cfg = global_config["date_range"]
 START_YEAR = date_cfg["start_year"]
+START_MONTH = date_cfg["start_month"]
 END_YEAR = date_cfg["end_year"]
+END_MONTH = date_cfg["end_month"]
 
 # 👉 OUTPUT SEMPRE NA RAIZ DO PROJETO
 OUTPUT_FOLDER = os.path.join(PROJECT_ROOT, global_config["output"]["folder"])
@@ -72,7 +74,10 @@ def fetch_ohlcv_year(symbol: str, timeframe: str, year: int) -> pd.DataFrame:
 
     ohlcv = []
 
-    with tqdm(desc=f"Downloading {symbol} {timeframe} {year}", unit="batch") as pbar:
+    with tqdm(
+        desc=f"Downloading {symbol} {timeframe} {year}",
+        unit="batch"
+    ) as pbar:
         while since < end_ts:
             batch = exchange.fetch_ohlcv(
                 symbol=symbol,
@@ -122,7 +127,7 @@ def run():
             ):
                 print(
                     f"\n🔹 START | {symbol} | TF={timeframe} "
-                    f"| MaxLoss={max_loss}% | MinExtreme={min_extreme}% \n"
+                    f"| MaxLoss={max_loss}% | MinExtreme={min_extreme}%\n"
                 )
 
                 capital = INITIAL_BALANCE
@@ -203,11 +208,16 @@ def run():
 
                 df_out = pd.DataFrame(rows)
 
+                # ====================================================
+                # OUTPUT FILE (PADRÃO UNIFICADO)
+                # ====================================================
+                symbol_clean = symbol.replace("/", "")
+
                 filename = (
-                    f"{symbol.replace('/', '')}_"
-                    f"{timeframe}_"
-                    f"maxloss_{max_loss}_"
-                    f"minext_{min_extreme}.xlsx"
+                    f"{symbol_clean}_"
+                    f"{START_MONTH}_{START_YEAR}_"
+                    f"{END_MONTH}_{END_YEAR}_"
+                    f"scanning.xlsx"
                 )
 
                 full_path = os.path.join(OUTPUT_FOLDER, filename)
@@ -223,7 +233,7 @@ def run():
                         sheet_name="results"
                     )
 
-                print(f"\n📊 File generated: {full_path}\n")
+                print(f"\n📊 Scanning generated: {full_path}\n")
 
 # ============================================================
 # ENTRY POINT
