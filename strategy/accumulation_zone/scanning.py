@@ -11,6 +11,7 @@ import yaml
 # ============================================================
 # Ajuste de import para exchange.py (raiz do projeto)
 # ============================================================
+
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../"))
 sys.path.append(PROJECT_ROOT)
 
@@ -20,6 +21,7 @@ from accumulation_zone import backtest_strategy
 # ============================================================
 # LOAD GLOBAL CONFIG
 # ============================================================
+
 BASE_DIR = os.path.dirname(__file__)
 
 GLOBAL_CONFIG_PATH = os.path.join(PROJECT_ROOT, "config.yaml")
@@ -42,31 +44,45 @@ os.makedirs(OUTPUT_FOLDER, exist_ok=True)
 # ============================================================
 # LOAD STRATEGY CONFIG
 # ============================================================
+
 STRATEGY_CONFIG_PATH = os.path.join(BASE_DIR, "config.yaml")
 with open(STRATEGY_CONFIG_PATH, "r", encoding="utf-8") as f:
     strategy_config = yaml.safe_load(f)
 
 strategy_params = strategy_config["strategy"]
+
 LOOKBACK = strategy_params.get("lookback_candles", 200)
 
-# ============================================================
-# RISK MANAGEMENT CONFIG (FLAG)
-# ============================================================
+# ----------------------------
+# RISK MANAGEMENT
+# ----------------------------
+
 risk_cfg = strategy_params.get("risk_management", {})
 
 RISK_ENABLED = risk_cfg.get("enabled", False)
 MAX_MONTHLY_DRAWDOWN = risk_cfg.get("max_monthly_drawdown", -3.0)
 MAX_RECOVERY_TRADES = risk_cfg.get("max_recovery_trades", 2)
 
+# ----------------------------
+# LEVERAGE CONFIG
+# ----------------------------
+
+leverage_cfg = strategy_params.get("leverage", {})
+
+LEVERAGE_ENABLED = leverage_cfg.get("enabled", False)
+LEVERAGE_VALUE = float(leverage_cfg.get("value", 1.0))
+
 # ============================================================
 # GRID SEARCH PARAMETERS
 # ============================================================
-MAX_LOSS_VALUES = [1.0, 1.5, 2.0, 2.5, 3.0]
-MIN_PERCENT_EXTREME_VALUES = [40.0, 45.0, 50.0, 55.0, 60.0]
+
+MAX_LOSS_VALUES = [2.5]
+MIN_PERCENT_EXTREME_VALUES = [60.0]
 
 # ============================================================
 # EXCHANGE
 # ============================================================
+
 exchange = get_exchange()
 
 # ============================================================
@@ -84,7 +100,8 @@ def fetch_ohlcv_year(symbol: str, timeframe: str, year: int) -> pd.DataFrame:
 
     with tqdm(
         desc=f"Downloading {symbol} {timeframe} {year}",
-        unit="batch"
+        unit="batch",
+        leave=False
     ) as pbar:
         while since < end_ts:
             batch = exchange.fetch_ohlcv(
@@ -123,6 +140,10 @@ def build_month_ranges(year: int):
     ]
 
 
+# ============================================================
+# RISK MANAGEMENT (MONTHLY)
+# ============================================================
+
 def apply_monthly_risk_management(trades: pd.DataFrame) -> float:
     """
     Retorna o retorno percentual FINAL do mês (ex: 0.012 = +1.2%)
@@ -134,6 +155,11 @@ def apply_monthly_risk_management(trades: pd.DataFrame) -> float:
 
     for _, trade in trades.iterrows():
         trade_return = (trade["pnl"] / trade["entry_price"]) * 100
+
+        # Aplica alavancagem por trade
+        if LEVERAGE_ENABLED:
+            trade_return *= LEVERAGE_VALUE
+
         trades_taken += 1
         cumulative += trade_return
 
@@ -145,7 +171,7 @@ def apply_monthly_risk_management(trades: pd.DataFrame) -> float:
         if trades_taken == 1 and trade_return < 0:
             continue
 
-        # 🚀 Recuperou e ficou positivo
+        # 🚀 Recuperou
         if cumulative > 0:
             break
 
@@ -167,7 +193,13 @@ def get_month_return(portfolio, trades) -> float:
     if RISK_ENABLED:
         return apply_monthly_risk_management(trades)
 
-    return portfolio.total_return()
+    base_return = portfolio.total_return()
+
+    if LEVERAGE_ENABLED:
+        base_return *= LEVERAGE_VALUE
+
+    return base_return
+
 
 # ============================================================
 # MAIN
@@ -175,6 +207,7 @@ def get_month_return(portfolio, trades) -> float:
 
 def run():
     risk_tag = "riskON" if RISK_ENABLED else "riskOFF"
+    lev_tag = f"{LEVERAGE_VALUE}x" if LEVERAGE_ENABLED else "1x"
 
     for symbol in SYMBOLS:
         for timeframe in TIMEFRAMES:
@@ -185,7 +218,7 @@ def run():
                 print(
                     f"\n🔹 START | {symbol} | TF={timeframe} "
                     f"| MaxLoss={max_loss}% | MinExtreme={min_extreme}% "
-                    f"| {risk_tag}\n"
+                    f"| {risk_tag} | Lev={lev_tag}\n"
                 )
 
                 capital = INITIAL_BALANCE
@@ -226,6 +259,10 @@ def run():
 
                         trades = portfolio.trades.records
                         month_return = get_month_return(portfolio, trades)
+
+                        # 🚨 Limite de liquidação
+                        month_return = max(month_return, -1.0)
+
                         capital *= (1 + month_return)
 
                         if capital <= 0:
@@ -252,6 +289,7 @@ def run():
                         "MaxLoss": f"{max_loss}%",
                         "MinExtreme": f"{min_extreme}%",
                         "Risk": risk_tag,
+                        "Leverage": lev_tag,
                         "Year": year,
                         "FinalBalance": round(capital, 2),
                         "AnnualReturn": round(annual_return * 100, 2),
@@ -274,7 +312,7 @@ def run():
                     f"{symbol_clean}_"
                     f"{START_MONTH}_{START_YEAR}_"
                     f"{END_MONTH}_{END_YEAR}_"
-                    f"{risk_tag}_scanning.xlsx"
+                    f"{risk_tag}_{lev_tag}_scanning.xlsx"
                 )
 
                 full_path = os.path.join(OUTPUT_FOLDER, filename)
@@ -291,6 +329,7 @@ def run():
                     )
 
                 print(f"\n📊 Scanning generated: {full_path}\n")
+
 
 # ============================================================
 # ENTRY POINT

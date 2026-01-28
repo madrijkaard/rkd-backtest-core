@@ -8,25 +8,23 @@ strategy:
   # ---------------------------------------------------------
   # Core parameters
   # ---------------------------------------------------------
-  lookback_candles: 200          # Number of candles used to calculate the zones
-  max_loss_percent: 2.0          # Maximum allowed stop loss (%). None disables the filter
+  lookback_candles: 200          # Candles usados para calcular zonas
+  max_loss_percent: 2.5          # Stop máximo permitido (%). None desativa
 
   # ---------------------------------------------------------
   # Logarithmic zones configuration
   # ---------------------------------------------------------
   zones:
-    total: 8                     # Total number of logarithmic zones
-    top_active: 3                # Number of most active zones (must be sequential)
-    bottom_active: 2             # Number of least active zones (blocking)
+    total: 8                     # Total de zonas logarítmicas
+    top_active: 3                # Zonas mais ativas (devem ser sequenciais)
+    bottom_active: 2             # Zonas menos ativas (bloqueio)
 
   # ---------------------------------------------------------
   # Activity filters
   # ---------------------------------------------------------
   activity:
-    # Minimum percentage distance from the last high or low
-    # to validate a new trade (prevents entries too early)
-    min_percent_from_extreme: 60.0
-    
+    min_percent_from_extreme: 60.0  # Distância mínima do último topo/fundo
+
   # ---------------------------------------------------------
   # Trade targets (based on zones)
   # ---------------------------------------------------------
@@ -35,9 +33,16 @@ strategy:
     short: 2
 
   # ---------------------------------------------------------
-  # Risk management (monthly)
+  # Monthly risk management (scanner only)
   # ---------------------------------------------------------
   risk_management:
-    enabled: false
-    max_monthly_drawdown: -3.0
-    max_recovery_trades: 2
+    enabled: true               # true = ativa gestão mensal
+    max_monthly_drawdown: -3.0   # % máximo de perda no mês
+    max_recovery_trades: 2       # nº máximo de trades de recuperação
+
+  # ---------------------------------------------------------
+  # Leverage configuration (scanner only)
+  # ---------------------------------------------------------
+  leverage:
+    enabled: true               # true = aplica alavancagem
+    value: 5.0                   # multiplicador de retorno (ex: 5x)
