@@ -36,7 +36,6 @@ START_MONTH = date_cfg["start_month"]
 END_YEAR = date_cfg["end_year"]
 END_MONTH = date_cfg["end_month"]
 
-# 👉 OUTPUT SEMPRE NA RAIZ DO PROJETO
 OUTPUT_FOLDER = os.path.join(PROJECT_ROOT, global_config["output"]["folder"])
 os.makedirs(OUTPUT_FOLDER, exist_ok=True)
 
@@ -51,10 +50,19 @@ strategy_params = strategy_config["strategy"]
 LOOKBACK = strategy_params.get("lookback_candles", 200)
 
 # ============================================================
+# RISK MANAGEMENT CONFIG (FLAG)
+# ============================================================
+risk_cfg = strategy_params.get("risk_management", {})
+
+RISK_ENABLED = risk_cfg.get("enabled", False)
+MAX_MONTHLY_DRAWDOWN = risk_cfg.get("max_monthly_drawdown", -3.0)
+MAX_RECOVERY_TRADES = risk_cfg.get("max_recovery_trades", 2)
+
+# ============================================================
 # GRID SEARCH PARAMETERS
 # ============================================================
-MAX_LOSS_VALUES = [1.5]
-MIN_PERCENT_EXTREME_VALUES = [55.0]
+MAX_LOSS_VALUES = [1.0, 1.5, 2.0, 2.5, 3.0]
+MIN_PERCENT_EXTREME_VALUES = [40.0, 45.0, 50.0, 55.0, 60.0]
 
 # ============================================================
 # EXCHANGE
@@ -62,7 +70,7 @@ MIN_PERCENT_EXTREME_VALUES = [55.0]
 exchange = get_exchange()
 
 # ============================================================
-# Helpers
+# HELPERS
 # ============================================================
 
 def fetch_ohlcv_year(symbol: str, timeframe: str, year: int) -> pd.DataFrame:
@@ -114,11 +122,60 @@ def build_month_ranges(year: int):
         for month in range(1, 13)
     ]
 
+
+def apply_monthly_risk_management(trades: pd.DataFrame) -> float:
+    """
+    Retorna o retorno percentual FINAL do mês (ex: 0.012 = +1.2%)
+    aplicando regras de gestão de risco por trade.
+    """
+    cumulative = 0.0
+    trades_taken = 0
+    recovery_trades = 0
+
+    for _, trade in trades.iterrows():
+        trade_return = (trade["pnl"] / trade["entry_price"]) * 100
+        trades_taken += 1
+        cumulative += trade_return
+
+        # 🟢 Primeiro trade positivo → encerra mês
+        if trades_taken == 1 and trade_return > 0:
+            break
+
+        # 🔴 Primeiro trade negativo → entra em recuperação
+        if trades_taken == 1 and trade_return < 0:
+            continue
+
+        # 🚀 Recuperou e ficou positivo
+        if cumulative > 0:
+            break
+
+        # 💥 Estourou drawdown mensal
+        if cumulative <= MAX_MONTHLY_DRAWDOWN:
+            break
+
+        recovery_trades += 1
+        if recovery_trades >= MAX_RECOVERY_TRADES:
+            break
+
+    return cumulative / 100.0
+
+
+def get_month_return(portfolio, trades) -> float:
+    if trades is None or trades.empty:
+        return 0.0
+
+    if RISK_ENABLED:
+        return apply_monthly_risk_management(trades)
+
+    return portfolio.total_return()
+
 # ============================================================
 # MAIN
 # ============================================================
 
 def run():
+    risk_tag = "riskON" if RISK_ENABLED else "riskOFF"
+
     for symbol in SYMBOLS:
         for timeframe in TIMEFRAMES:
             for max_loss, min_extreme in itertools.product(
@@ -127,7 +184,8 @@ def run():
             ):
                 print(
                     f"\n🔹 START | {symbol} | TF={timeframe} "
-                    f"| MaxLoss={max_loss}% | MinExtreme={min_extreme}%\n"
+                    f"| MaxLoss={max_loss}% | MinExtreme={min_extreme}% "
+                    f"| {risk_tag}\n"
                 )
 
                 capital = INITIAL_BALANCE
@@ -166,7 +224,9 @@ def run():
                             freq=timeframe
                         )
 
-                        capital *= (1 + portfolio.total_return())
+                        trades = portfolio.trades.records
+                        month_return = get_month_return(portfolio, trades)
+                        capital *= (1 + month_return)
 
                         if capital <= 0:
                             print(f"💥 BROKE DURING {year}")
@@ -191,6 +251,7 @@ def run():
                         "TF": timeframe,
                         "MaxLoss": f"{max_loss}%",
                         "MinExtreme": f"{min_extreme}%",
+                        "Risk": risk_tag,
                         "Year": year,
                         "FinalBalance": round(capital, 2),
                         "AnnualReturn": round(annual_return * 100, 2),
@@ -208,16 +269,12 @@ def run():
 
                 df_out = pd.DataFrame(rows)
 
-                # ====================================================
-                # OUTPUT FILE (PADRÃO UNIFICADO)
-                # ====================================================
                 symbol_clean = symbol.replace("/", "")
-
                 filename = (
                     f"{symbol_clean}_"
                     f"{START_MONTH}_{START_YEAR}_"
                     f"{END_MONTH}_{END_YEAR}_"
-                    f"scanning.xlsx"
+                    f"{risk_tag}_scanning.xlsx"
                 )
 
                 full_path = os.path.join(OUTPUT_FOLDER, filename)
