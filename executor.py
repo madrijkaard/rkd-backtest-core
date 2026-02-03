@@ -158,35 +158,31 @@ def run():
     clean_output_folder(OUTPUT_FOLDER)
     os.makedirs(OUTPUT_FOLDER, exist_ok=True)
 
+    generated_files: list[str] = []
+
     for symbol in SYMBOLS:
         print(f"\n⚙️  Running backtest for {symbol}")
 
         base_name = build_base_filename(symbol)
 
-        stats_file = os.path.join(
-            OUTPUT_FOLDER,
-            f"{base_name}_strategy.xlsx"
-        )
-
-        trades_file = os.path.join(
-            OUTPUT_FOLDER,
-            f"{base_name}_trades.xlsx"
-        )
-
-        if os.path.exists(stats_file):
-            os.remove(stats_file)
-        if os.path.exists(trades_file):
-            os.remove(trades_file)
-
         for timeframe in TIMEFRAMES:
             print(f"\n⏱  Timeframe: {timeframe}")
+
+            stats_file = os.path.join(
+                OUTPUT_FOLDER,
+                f"{base_name}_{timeframe}_strategy.xlsx"
+            )
+
+            trades_file = os.path.join(
+                OUTPUT_FOLDER,
+                f"{base_name}_{timeframe}_trades.xlsx"
+            )
 
             all_monthly_stats = []
             all_trades = []
 
             df_full = fetch_ohlcv(symbol, timeframe)
             if df_full.empty:
-                print(" ❌ No data, skipping timeframe.")
                 continue
 
             month_ranges = generate_month_ranges(
@@ -196,26 +192,24 @@ def run():
                 date_cfg["end_month"]
             )
 
-            for month_start, month_end in tqdm(
-                month_ranges,
-                desc="Running backtest",
-                unit="month"
-            ):
-                df_month = df_full.loc[month_start:month_end]
-                if df_month.empty:
+            for month_start, month_end in tqdm(month_ranges, unit="month"):
+                df = df_full.loc[month_start:month_end]
+                if df.empty:
                     continue
 
                 entries_l, exits_l, entries_s, exits_s = (
                     log_zones_activity_strategy(
-                        close=df_month["close"].values,
-                        open_=df_month["open"].values,
+                        open_=df["open"].values,
+                        high=df["high"].values,
+                        low=df["low"].values,
+                        close=df["close"].values,
                         max_loss_percent=MAX_LOSS_PERCENT,
                         min_percent_from_extreme=MIN_PERCENT_FROM_EXTREME
                     )
                 )
 
                 portfolio = vbt.Portfolio.from_signals(
-                    close=df_month["close"],
+                    close=df["close"],
                     entries=entries_l,
                     exits=exits_l,
                     short_entries=entries_s,
@@ -224,9 +218,6 @@ def run():
                     freq=timeframe
                 )
 
-                # -----------------------------
-                # STATS
-                # -----------------------------
                 stats = portfolio.stats()
                 stats["symbol"] = symbol
                 stats["timeframe"] = timeframe
@@ -234,72 +225,44 @@ def run():
                 stats["month"] = month_start.month
                 all_monthly_stats.append(stats)
 
-                # -----------------------------
-                # TRADES
-                # -----------------------------
                 records = portfolio.trades.records
-
                 if records is not None and not records.empty:
                     trades = records.copy()
-
                     trades["symbol"] = symbol
                     trades["timeframe"] = timeframe
                     trades["year"] = month_start.year
                     trades["month"] = month_start.month
-
-                    trades["side"] = trades["direction"].apply(
-                        lambda d: "LONG" if d == 1 else "SHORT"
-                    )
-
-                    trades["entry_time"] = df_month.index[trades["entry_idx"]].values
-                    trades["exit_time"] = df_month.index[trades["exit_idx"]].values
-
                     all_trades.append(trades)
 
-            # -----------------------------
-            # EXPORT STATS
-            # -----------------------------
             if all_monthly_stats:
-                stats_df = pd.DataFrame(all_monthly_stats)
-                with pd.ExcelWriter(
+                pd.DataFrame(all_monthly_stats).to_excel(
                     stats_file,
-                    engine="openpyxl",
-                    mode="a" if os.path.exists(stats_file) else "w"
-                ) as writer:
-                    stats_df.to_excel(
-                        writer,
-                        index=False,
-                        sheet_name=timeframe
-                    )
+                    index=False
+                )
+                generated_files.append(stats_file)
 
-                print(f"\n📁 Stats for {timeframe} saved to: {stats_file}")
-
-            # -----------------------------
-            # EXPORT TRADES
-            # -----------------------------
             if all_trades:
-                trades_df = pd.concat(all_trades, ignore_index=True)
-                with pd.ExcelWriter(
+                pd.concat(all_trades).to_excel(
                     trades_file,
-                    engine="openpyxl",
-                    mode="a" if os.path.exists(trades_file) else "w"
-                ) as writer:
-                    trades_df.to_excel(
-                        writer,
-                        index=False,
-                        sheet_name=timeframe
-                    )
+                    index=False
+                )
+                generated_files.append(trades_file)
 
-                print(f"\n📄 Trades for {timeframe} saved to: {trades_file}")
+    # =====================================================
+    # FINAL REPORT
+    # =====================================================
+
+    if generated_files:
+        print("\n✅ Backtest finished successfully!")
+        print("📁 Files generated:")
+        for path in generated_files:
+            print(f"  - {os.path.normpath(path)}")
+    else:
+        print("\n⚠️  Backtest finished, but no files were generated.")
 
 # =========================================================
 # ENTRY POINT
 # =========================================================
 
 if __name__ == "__main__":
-    try:
-        run()
-    except Exception as e:
-        print("\n❌ Error during execution:")
-        print(e)
-        input("\nPress ENTER to exit...")
+    run()

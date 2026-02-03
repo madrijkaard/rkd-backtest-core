@@ -9,14 +9,14 @@ import vectorbt as vbt
 import yaml
 
 # ============================================================
-# Ajuste de import para exchange.py (raiz do projeto)
+# Ajuste de import para raiz do projeto
 # ============================================================
 
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../"))
 sys.path.append(PROJECT_ROOT)
 
 from exchange import get_exchange
-from accumulation_zone import backtest_strategy
+from accumulation_zone import log_zones_activity_strategy
 
 # ============================================================
 # LOAD GLOBAL CONFIG
@@ -64,7 +64,7 @@ MAX_MONTHLY_DRAWDOWN = risk_cfg.get("max_monthly_drawdown", -3.0)
 MAX_RECOVERY_TRADES = risk_cfg.get("max_recovery_trades", 2)
 
 # ----------------------------
-# LEVERAGE CONFIG
+# LEVERAGE
 # ----------------------------
 
 leverage_cfg = strategy_params.get("leverage", {})
@@ -73,11 +73,11 @@ LEVERAGE_ENABLED = leverage_cfg.get("enabled", False)
 LEVERAGE_VALUE = float(leverage_cfg.get("value", 1.0))
 
 # ============================================================
-# GRID SEARCH PARAMETERS
+# GRID SEARCH
 # ============================================================
 
-MAX_LOSS_VALUES = [2.5]
-MIN_PERCENT_EXTREME_VALUES = [60.0]
+MAX_LOSS_VALUES = [1.5, 2.0, 2.5]
+MIN_PERCENT_EXTREME_VALUES = [45.0, 55.0, 65.0]
 
 # ============================================================
 # EXCHANGE
@@ -90,11 +90,11 @@ exchange = get_exchange()
 # ============================================================
 
 def fetch_ohlcv_year(symbol: str, timeframe: str, year: int) -> pd.DataFrame:
-    start_date = pd.Timestamp(year=year, month=1, day=1)
-    end_date = pd.Timestamp(year=year, month=12, day=31, hour=23, minute=59)
+    start = pd.Timestamp(year=year, month=1, day=1)
+    end = pd.Timestamp(year=year, month=12, day=31, hour=23, minute=59)
 
-    since = int(start_date.timestamp() * 1000)
-    end_ts = int(end_date.timestamp() * 1000)
+    since = int(start.timestamp() * 1000)
+    end_ts = int(end.timestamp() * 1000)
 
     ohlcv = []
 
@@ -133,22 +133,17 @@ def fetch_ohlcv_year(symbol: str, timeframe: str, year: int) -> pd.DataFrame:
 def build_month_ranges(year: int):
     return [
         (
-            pd.Timestamp(year, month, 1),
-            pd.Timestamp(year, month, 1) + pd.offsets.MonthEnd(1)
+            pd.Timestamp(year, m, 1),
+            pd.Timestamp(year, m, 1) + pd.offsets.MonthEnd(1)
         )
-        for month in range(1, 13)
+        for m in range(1, 13)
     ]
-
 
 # ============================================================
 # RISK MANAGEMENT (MONTHLY)
 # ============================================================
 
 def apply_monthly_risk_management(trades: pd.DataFrame) -> float:
-    """
-    Retorna o retorno percentual FINAL do mês (ex: 0.012 = +1.2%)
-    aplicando regras de gestão de risco por trade.
-    """
     cumulative = 0.0
     trades_taken = 0
     recovery_trades = 0
@@ -156,26 +151,18 @@ def apply_monthly_risk_management(trades: pd.DataFrame) -> float:
     for _, trade in trades.iterrows():
         trade_return = (trade["pnl"] / trade["entry_price"]) * 100
 
-        # Aplica alavancagem por trade
         if LEVERAGE_ENABLED:
             trade_return *= LEVERAGE_VALUE
 
         trades_taken += 1
         cumulative += trade_return
 
-        # 🟢 Primeiro trade positivo → encerra mês
         if trades_taken == 1 and trade_return > 0:
             break
 
-        # 🔴 Primeiro trade negativo → entra em recuperação
-        if trades_taken == 1 and trade_return < 0:
-            continue
-
-        # 🚀 Recuperou
         if cumulative > 0:
             break
 
-        # 💥 Estourou drawdown mensal
         if cumulative <= MAX_MONTHLY_DRAWDOWN:
             break
 
@@ -200,7 +187,6 @@ def get_month_return(portfolio, trades) -> float:
 
     return base_return
 
-
 # ============================================================
 # MAIN
 # ============================================================
@@ -211,6 +197,9 @@ def run():
 
     for symbol in SYMBOLS:
         for timeframe in TIMEFRAMES:
+
+            all_rows = []  # <<< ACUMULA TODAS AS VARIAÇÕES
+
             for max_loss, min_extreme in itertools.product(
                 MAX_LOSS_VALUES,
                 MIN_PERCENT_EXTREME_VALUES
@@ -221,6 +210,12 @@ def run():
                     f"| {risk_tag} | Lev={lev_tag}\n"
                 )
 
+                print(
+                    f"{'Year':<6} {'Capital':>12} {'Annual%':>10} "
+                    f"{'Total%':>10} {'Status':>10}"
+                )
+                print("-" * 54)
+
                 capital = INITIAL_BALANCE
                 rows = []
                 broke_early = False
@@ -229,7 +224,6 @@ def run():
                     df_year = fetch_ohlcv_year(symbol, timeframe, year)
 
                     if df_year.empty or len(df_year) < LOOKBACK + 20:
-                        print(f"⚠️ Insufficient data for {symbol} {year}")
                         break
 
                     capital_start_year = capital
@@ -239,11 +233,16 @@ def run():
                         if len(df_month) < LOOKBACK + 10:
                             continue
 
-                        entries_l, exits_l, entries_s, exits_s = backtest_strategy(
-                            df_month,
-                            lookback=LOOKBACK,
-                            max_loss_percent=max_loss,
-                            min_percent_from_extreme=min_extreme
+                        entries_l, exits_l, entries_s, exits_s = (
+                            log_zones_activity_strategy(
+                                open_=df_month["open"].values,
+                                high=df_month["high"].values,
+                                low=df_month["low"].values,
+                                close=df_month["close"].values,
+                                lookback=LOOKBACK,
+                                max_loss_percent=max_loss,
+                                min_percent_from_extreme=min_extreme
+                            )
                         )
 
                         portfolio = vbt.Portfolio.from_signals(
@@ -260,13 +259,10 @@ def run():
                         trades = portfolio.trades.records
                         month_return = get_month_return(portfolio, trades)
 
-                        # 🚨 Limite de liquidação
                         month_return = max(month_return, -1.0)
-
                         capital *= (1 + month_return)
 
                         if capital <= 0:
-                            print(f"💥 BROKE DURING {year}")
                             capital = 0.0
                             broke_early = True
                             break
@@ -275,12 +271,16 @@ def run():
                         (capital / capital_start_year) - 1
                         if capital_start_year > 0 else -1
                     )
+
                     total_return = (capital / INITIAL_BALANCE) - 1
+                    status = "BROKE" if capital <= 0 else "OK"
 
                     print(
-                        f"▶ {year} | FinalBalance={capital:.2f} | "
-                        f"AnnualReturn={annual_return * 100:.2f}% | "
-                        f"TotalReturn={total_return * 100:.2f}%"
+                        f"{year:<6} "
+                        f"{capital:>12.2f} "
+                        f"{annual_return * 100:>9.2f}% "
+                        f"{total_return * 100:>9.2f}% "
+                        f"{status:>10}"
                     )
 
                     rows.append({
@@ -305,31 +305,28 @@ def run():
                 rows[-1]["FinalCapital"] = round(capital, 2)
                 rows[-1]["Status"] = status
 
-                df_out = pd.DataFrame(rows)
+                all_rows.extend(rows)  # <<< GUARDA RESULTADO DA VARIAÇÃO
 
-                symbol_clean = symbol.replace("/", "")
-                filename = (
-                    f"{symbol_clean}_"
-                    f"{START_MONTH}_{START_YEAR}_"
-                    f"{END_MONTH}_{END_YEAR}_"
-                    f"{risk_tag}_{lev_tag}_scanning.xlsx"
-                )
+            # ==========================
+            # EXPORTA UMA ÚNICA VEZ
+            # ==========================
 
-                full_path = os.path.join(OUTPUT_FOLDER, filename)
+            df_out = pd.DataFrame(all_rows)
 
-                with pd.ExcelWriter(
-                    full_path,
-                    engine="openpyxl",
-                    mode="w"
-                ) as writer:
-                    df_out.to_excel(
-                        writer,
-                        index=False,
-                        sheet_name="results"
-                    )
+            symbol_clean = symbol.replace("/", "")
+            filename = (
+                f"{symbol_clean}_"
+                f"{START_MONTH}_{START_YEAR}_"
+                f"{END_MONTH}_{END_YEAR}_"
+                f"{risk_tag}_{lev_tag}_scanning.xlsx"
+            )
 
-                print(f"\n📊 Scanning generated: {full_path}\n")
+            full_path = os.path.join(OUTPUT_FOLDER, filename)
 
+            with pd.ExcelWriter(full_path, engine="openpyxl") as writer:
+                df_out.to_excel(writer, index=False, sheet_name="results")
+
+            print(f"\n📊 Scanning generated: {full_path}\n")
 
 # ============================================================
 # ENTRY POINT

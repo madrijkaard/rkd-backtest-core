@@ -13,10 +13,10 @@ exchange:
 # Symbols & Timeframes
 # ---------------------------------------------------------
 symbols:
-  - ATOM/USDT
+  - UNI/USDT
 
 timeframes:
-  - 1h
+  - 30m
 
 # ---------------------------------------------------------
 # Date range for backtests

@@ -36,7 +36,7 @@ strategy:
   # Monthly risk management (scanner only)
   # ---------------------------------------------------------
   risk_management:
-    enabled: true               # true = ativa gestão mensal
+    enabled: false               # true = ativa gestão mensal
     max_monthly_drawdown: -3.0   # % máximo de perda no mês
     max_recovery_trades: 2       # nº máximo de trades de recuperação
 

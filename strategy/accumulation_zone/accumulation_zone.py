@@ -16,16 +16,10 @@ with open(CONFIG_PATH, "r", encoding="utf-8") as f:
 
 STRATEGY_CFG = config["strategy"]
 
-# ----------------------------
-# Core params
-# ----------------------------
 TOTAL_ZONES = STRATEGY_CFG["zones"]["total"]
 TOP_ACTIVE = STRATEGY_CFG["zones"]["top_active"]
 BOTTOM_ACTIVE = STRATEGY_CFG["zones"]["bottom_active"]
 
-# ----------------------------
-# Targets (ZONE OFFSETS)
-# ----------------------------
 TARGET_LONG_OFFSET = STRATEGY_CFG["targets"]["long"]
 TARGET_SHORT_OFFSET = STRATEGY_CFG["targets"]["short"]
 
@@ -53,11 +47,7 @@ def compute_log_zones(price_min, price_max, n_zones):
     return np.exp(levels)
 
 
-def get_less_active_zones(activity: np.ndarray, bottom_active: int):
-    """
-    Retorna exatamente 'bottom_active' zonas menos ativas.
-    Em caso de empate que exceda o limite, sorteia.
-    """
+def get_less_active_zones(activity, bottom_active):
     sorted_indices = np.argsort(activity)
     cutoff_index = sorted_indices[bottom_active - 1]
     cutoff_value = activity[cutoff_index]
@@ -66,21 +56,19 @@ def get_less_active_zones(activity: np.ndarray, bottom_active: int):
     equal_cutoff = np.where(activity == cutoff_value)[0].tolist()
 
     remaining = bottom_active - len(strictly_lower)
-
-    if remaining > 0:
-        selected_equal = random.sample(equal_cutoff, remaining)
-    else:
-        selected_equal = []
+    selected_equal = random.sample(equal_cutoff, remaining) if remaining > 0 else []
 
     return sorted(strictly_lower + selected_equal)
 
 # ============================================================
-# Estratégia principal
+# Estratégia principal (MODELO REATIVO)
 # ============================================================
 
 def log_zones_activity_strategy(
-    close,
     open_,
+    high,
+    low,
+    close,
     lookback=200,
     max_loss_percent=None,
     min_percent_from_extreme=55.0
@@ -95,73 +83,66 @@ def log_zones_activity_strategy(
     in_long = False
     in_short = False
 
-    stop_long = None
-    stop_short = None
-    target_long = None
-    target_short = None
+    entry_price = None
+    stop_price = None
+    target_price = None
 
-    for i in range(lookback, n):
-
-        price_prev = close[i - 1]
-        price_now = close[i]
+    for i in range(lookback - 1, n):
 
         # ====================================================
-        # Gerenciamento de posição
+        # Gerenciamento de posição (intra-candle)
         # ====================================================
         if in_long:
-            if price_now <= stop_long or price_now >= target_long:
+            if low[i] <= stop_price:
                 exits_long[i] = True
                 in_long = False
-                stop_long = None
-                target_long = None
+            elif high[i] >= target_price:
+                exits_long[i] = True
+                in_long = False
 
         if in_short:
-            if price_now >= stop_short or price_now <= target_short:
+            if high[i] >= stop_price:
                 exits_short[i] = True
                 in_short = False
-                stop_short = None
-                target_short = None
+            elif low[i] <= target_price:
+                exits_short[i] = True
+                in_short = False
 
         if in_long or in_short:
             continue
 
         # ====================================================
-        # Janela de candles
+        # Janela REATIVA (inclui candle atual)
         # ====================================================
-        window_close = close[i - lookback:i]
-        window_open = open_[i - lookback:i]
+        start = i - lookback + 1
+        end = i + 1
+
+        window_close = close[start:end]
+        window_open  = open_[start:end]
+        window_low   = low[start:end]
+        window_high  = high[start:end]
 
         if percentage_since_last_extreme(window_close) < min_percent_from_extreme:
             continue
 
-        price_min = window_close.min()
-        price_max = window_close.max()
+        price_min = window_low.min()
+        price_max = window_high.max()
 
         limits = compute_log_zones(price_min, price_max, TOTAL_ZONES)
         activity = np.zeros(TOTAL_ZONES)
 
-        # ====================================================
-        # Calcular atividade por zona
-        # ====================================================
-        for j in range(lookback):
+        for j in range(len(window_close)):
             body_low = min(window_open[j], window_close[j])
             body_high = max(window_open[j], window_close[j])
 
             for z in range(TOTAL_ZONES):
-                zone_low = limits[z]
-                zone_high = limits[z + 1]
-
-                overlap_low = max(body_low, zone_low)
-                overlap_high = min(body_high, zone_high)
+                overlap_low = max(body_low, limits[z])
+                overlap_high = min(body_high, limits[z + 1])
 
                 if overlap_high > overlap_low:
                     activity[z] += (overlap_high - overlap_low) / body_low
 
-        # ====================================================
-        # Top zonas mais ativas
-        # ====================================================
-        sorted_zones = np.argsort(activity)
-        top_zones = sorted_zones[-TOP_ACTIVE:]
+        top_zones = np.argsort(activity)[-TOP_ACTIVE:]
 
         if TOP_ACTIVE != 3 or not zones_in_sequence(top_zones):
             continue
@@ -169,80 +150,52 @@ def log_zones_activity_strategy(
         top_sorted = sorted(top_zones)
         central_zone = top_sorted[1]
 
-        # ====================================================
-        # Zonas menos ativas (bloqueio)
-        # ====================================================
-        less_active_zones = get_less_active_zones(activity, BOTTOM_ACTIVE)
-
-        above_zone = top_sorted[-1] + 1
-        below_zone = top_sorted[0] - 1
-
-        block_long = above_zone in less_active_zones
-        block_short = below_zone in less_active_zones
+        less_active = get_less_active_zones(activity, BOTTOM_ACTIVE)
 
         # ====================================================
         # LONG
         # ====================================================
-        if not block_long and central_zone + TARGET_LONG_OFFSET < len(limits):
-            crossed_up = (
-                price_prev <= limits[central_zone + 1]
-                and price_now > limits[central_zone + 1]
-            )
+        if central_zone + TARGET_LONG_OFFSET < len(limits):
+            level = limits[central_zone + 1]
+
+            crossed_up = close[i - 1] <= level and close[i] > level
 
             if crossed_up:
-                stop_candidate = (
-                    limits[central_zone] + limits[central_zone + 1]
-                ) / 2
+                entry_price = level
+                stop_price = (limits[central_zone] + level) / 2
+                target_price = limits[central_zone + TARGET_LONG_OFFSET]
 
-                target_candidate = limits[central_zone + TARGET_LONG_OFFSET]
-
-                if max_loss_percent is not None:
-                    stop_loss_percent = (
-                        (price_now - stop_candidate) / price_now
-                    ) * 100
-
-                    if stop_loss_percent > max_loss_percent:
+                if max_loss_percent:
+                    loss = (entry_price - stop_price) / entry_price * 100
+                    if loss > max_loss_percent:
                         continue
 
                 entries_long[i] = True
                 in_long = True
-                stop_long = stop_candidate
-                target_long = target_candidate
                 continue
 
         # ====================================================
         # SHORT
         # ====================================================
-        if not block_short and central_zone - TARGET_SHORT_OFFSET >= 0:
-            crossed_down = (
-                price_prev >= limits[central_zone]
-                and price_now < limits[central_zone]
-            )
+        if central_zone - TARGET_SHORT_OFFSET >= 0:
+            level = limits[central_zone]
+
+            crossed_down = close[i - 1] >= level and close[i] < level
 
             if crossed_down:
-                stop_candidate = (
-                    limits[central_zone] + limits[central_zone + 1]
-                ) / 2
+                entry_price = level
+                stop_price = (limits[central_zone] + limits[central_zone + 1]) / 2
+                target_price = limits[central_zone - TARGET_SHORT_OFFSET]
 
-                target_candidate = limits[central_zone - TARGET_SHORT_OFFSET]
-
-                if max_loss_percent is not None:
-                    stop_loss_percent = (
-                        (stop_candidate - price_now) / price_now
-                    ) * 100
-
-                    if stop_loss_percent > max_loss_percent:
+                if max_loss_percent:
+                    loss = (stop_price - entry_price) / entry_price * 100
+                    if loss > max_loss_percent:
                         continue
 
                 entries_short[i] = True
                 in_short = True
-                stop_short = stop_candidate
-                target_short = target_candidate
                 continue
 
-    # ========================================================
-    # Flip de posição
-    # ========================================================
     exits_long |= entries_short
     exits_short |= entries_long
 
@@ -254,9 +207,6 @@ def log_zones_activity_strategy(
 
     return entries_long, exits_long, entries_short, exits_short
 
-# ============================================================
-# Wrapper esperado por outros módulos
-# ============================================================
 
 def backtest_strategy(
     data,
@@ -264,12 +214,11 @@ def backtest_strategy(
     max_loss_percent=None,
     min_percent_from_extreme=55.0
 ):
-    close = data["close"].values
-    open_ = data["open"].values
-
     return log_zones_activity_strategy(
-        close=close,
-        open_=open_,
+        open_=data["open"].values,
+        high=data["high"].values,
+        low=data["low"].values,
+        close=data["close"].values,
         lookback=lookback,
         max_loss_percent=max_loss_percent,
         min_percent_from_extreme=min_percent_from_extreme
