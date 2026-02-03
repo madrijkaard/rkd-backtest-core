@@ -16,7 +16,9 @@ PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../")
 sys.path.append(PROJECT_ROOT)
 
 from exchange import get_exchange
-from accumulation_zone import log_zones_activity_strategy
+from strategy.accumulation_zone.accumulation_zone import (
+    log_zones_activity_strategy
+)
 
 # ============================================================
 # LOAD GLOBAL CONFIG
@@ -54,14 +56,28 @@ strategy_params = strategy_config["strategy"]
 LOOKBACK = strategy_params.get("lookback_candles", 200)
 
 # ----------------------------
-# RISK MANAGEMENT
+# RISK MANAGEMENT (MONTHLY)
 # ----------------------------
 
 risk_cfg = strategy_params.get("risk_management", {})
 
 RISK_ENABLED = risk_cfg.get("enabled", False)
-MAX_MONTHLY_DRAWDOWN = risk_cfg.get("max_monthly_drawdown", -3.0)
-MAX_RECOVERY_TRADES = risk_cfg.get("max_recovery_trades", 2)
+MAX_MONTHLY_DRAWDOWN = float(risk_cfg.get("max_monthly_drawdown", -3.0))
+MAX_RECOVERY_TRADES = int(risk_cfg.get("max_recovery_trades", 2))
+MONTHLY_PROFIT_TARGET = risk_cfg.get("monthly_profit_target", None)
+
+MONTHLY_PROFIT_TARGET = (
+    float(MONTHLY_PROFIT_TARGET)
+    if MONTHLY_PROFIT_TARGET is not None
+    else None
+)
+
+MIN_FIRST_TRADE_PROFIT = risk_cfg.get("min_first_trade_profit", 0.0)
+MIN_FIRST_TRADE_PROFIT = (
+    float(MIN_FIRST_TRADE_PROFIT)
+    if MIN_FIRST_TRADE_PROFIT is not None
+    else None
+)
 
 # ----------------------------
 # LEVERAGE
@@ -146,7 +162,6 @@ def build_month_ranges(year: int):
 def apply_monthly_risk_management(trades: pd.DataFrame) -> float:
     cumulative = 0.0
     trades_taken = 0
-    recovery_trades = 0
 
     for _, trade in trades.iterrows():
         trade_return = (trade["pnl"] / trade["entry_price"]) * 100
@@ -157,17 +172,36 @@ def apply_monthly_risk_management(trades: pd.DataFrame) -> float:
         trades_taken += 1
         cumulative += trade_return
 
-        if trades_taken == 1 and trade_return > 0:
+        # ----------------------------------------------------
+        # Regra 1: 1º trade muito bom encerra o mês
+        # ----------------------------------------------------
+        if (
+            trades_taken == 1
+            and trade_return > 0
+            and MIN_FIRST_TRADE_PROFIT is not None
+            and trade_return >= MIN_FIRST_TRADE_PROFIT
+        ):
             break
 
-        if cumulative > 0:
+        # ----------------------------------------------------
+        # Regra 2: atingiu a meta mensal acumulada
+        # ----------------------------------------------------
+        if (
+            MONTHLY_PROFIT_TARGET is not None
+            and cumulative >= MONTHLY_PROFIT_TARGET
+        ):
             break
 
+        # ----------------------------------------------------
+        # Regra 3: estourou drawdown mensal
+        # ----------------------------------------------------
         if cumulative <= MAX_MONTHLY_DRAWDOWN:
             break
 
-        recovery_trades += 1
-        if recovery_trades >= MAX_RECOVERY_TRADES:
+        # ----------------------------------------------------
+        # Regra 4: acabaram as tentativas (inclui o 1º trade)
+        # ----------------------------------------------------
+        if trades_taken >= MAX_RECOVERY_TRADES:
             break
 
     return cumulative / 100.0
@@ -198,7 +232,7 @@ def run():
     for symbol in SYMBOLS:
         for timeframe in TIMEFRAMES:
 
-            all_rows = []  # <<< ACUMULA TODAS AS VARIAÇÕES
+            all_rows = []
 
             for max_loss, min_extreme in itertools.product(
                 MAX_LOSS_VALUES,
@@ -305,11 +339,7 @@ def run():
                 rows[-1]["FinalCapital"] = round(capital, 2)
                 rows[-1]["Status"] = status
 
-                all_rows.extend(rows)  # <<< GUARDA RESULTADO DA VARIAÇÃO
-
-            # ==========================
-            # EXPORTA UMA ÚNICA VEZ
-            # ==========================
+                all_rows.extend(rows)
 
             df_out = pd.DataFrame(all_rows)
 

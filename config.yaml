@@ -13,7 +13,7 @@ exchange:
 # Symbols & Timeframes
 # ---------------------------------------------------------
 symbols:
-  - UNI/USDT
+  - BTC/USDT
 
 timeframes:
   - 30m

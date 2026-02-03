@@ -38,11 +38,13 @@ strategy:
   risk_management:
     enabled: false               # true = ativa gestão mensal
     max_monthly_drawdown: -3.0   # % máximo de perda no mês
-    max_recovery_trades: 2       # nº máximo de trades de recuperação
+    min_first_trade_profit: 5.0  # % mínimo no 1º trade para encerrar o mês
+    monthly_profit_target: 3.0   # objetivo de lucro mensal
+    max_recovery_trades: 5       # nº máximo tentativas para objetivo de lucro mensal
 
   # ---------------------------------------------------------
   # Leverage configuration (scanner only)
   # ---------------------------------------------------------
   leverage:
-    enabled: true               # true = aplica alavancagem
+    enabled: true                # true = aplica alavancagem
     value: 5.0                   # multiplicador de retorno (ex: 5x)
