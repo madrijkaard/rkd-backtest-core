@@ -92,8 +92,8 @@ LEVERAGE_VALUE = float(leverage_cfg.get("value", 1.0))
 # GRID SEARCH
 # ============================================================
 
-MAX_LOSS_VALUES = [1.5, 2.0, 2.5]
-MIN_PERCENT_EXTREME_VALUES = [45.0, 55.0, 65.0]
+MAX_LOSS_VALUES = [1.0, 1.5, 2.0, 2.5, 3.0, 5.0]
+MIN_PERCENT_EXTREME_VALUES = [40.0, 45.0, 50.0, 55.0]
 
 # ============================================================
 # EXCHANGE
@@ -184,18 +184,18 @@ def apply_monthly_risk_management(trades: pd.DataFrame) -> float:
             break
 
         # ----------------------------------------------------
-        # Regra 2: atingiu a meta mensal acumulada
+        # Regra 2: estourou drawdown mensal
+        # ----------------------------------------------------
+        if cumulative <= MAX_MONTHLY_DRAWDOWN:
+            break
+
+        # ----------------------------------------------------
+        # Regra 3: atingiu a meta mensal acumulada
         # ----------------------------------------------------
         if (
             MONTHLY_PROFIT_TARGET is not None
             and cumulative >= MONTHLY_PROFIT_TARGET
         ):
-            break
-
-        # ----------------------------------------------------
-        # Regra 3: estourou drawdown mensal
-        # ----------------------------------------------------
-        if cumulative <= MAX_MONTHLY_DRAWDOWN:
             break
 
         # ----------------------------------------------------

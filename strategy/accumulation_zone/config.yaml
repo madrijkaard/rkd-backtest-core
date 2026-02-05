@@ -36,11 +36,11 @@ strategy:
   # Monthly risk management (scanner only)
   # ---------------------------------------------------------
   risk_management:
-    enabled: true                # true = ativa gestão mensal
-    max_monthly_drawdown: -3.0   # % máximo de perda no mês
-    min_first_trade_profit: 5.0  # % mínimo no 1º trade para encerrar o mês
-    monthly_profit_target: 5.0   # objetivo de lucro mensal
-    max_recovery_trades: 3       # nº máximo tentativas para objetivo de lucro mensal
+    enabled: false                # true = ativa gestão mensal
+    min_first_trade_profit: 2.0  # % mínimo no 1º trade para encerrar o mês
+    max_monthly_drawdown: -1.0   # % máximo de perda no mês
+    monthly_profit_target: 1.0   # objetivo de lucro mensal
+    max_recovery_trades: 2       # nº máximo tentativas para objetivo de lucro mensal
 
   # ---------------------------------------------------------
   # Leverage configuration (scanner only)

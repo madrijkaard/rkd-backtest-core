@@ -13,16 +13,16 @@ exchange:
 # Symbols & Timeframes
 # ---------------------------------------------------------
 symbols:
-  - BTC/USDT
+  - ETH/USDT
 
 timeframes:
-  - 30m
+  - 15m
 
 # ---------------------------------------------------------
 # Date range for backtests
 # ---------------------------------------------------------
 date_range:
-  start_year: 2020
+  start_year: 2019
   start_month: 1
   end_year: 2025
   end_month: 12
