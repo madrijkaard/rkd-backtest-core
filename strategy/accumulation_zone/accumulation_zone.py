@@ -1,9 +1,6 @@
-# strategy/accumulation_zone/accumulation_zone.py
-
 import numpy as np
 import yaml
 import os
-import random
 
 # ============================================================
 # LOAD STRATEGY CONFIG
@@ -17,14 +14,14 @@ with open(CONFIG_PATH, "r", encoding="utf-8") as f:
 STRATEGY_CFG = config["strategy"]
 
 TOTAL_ZONES = STRATEGY_CFG["zones"]["total"]
-TOP_ACTIVE = STRATEGY_CFG["zones"]["top_active"]
-BOTTOM_ACTIVE = STRATEGY_CFG["zones"]["bottom_active"]
+TOP_ACTIVE = STRATEGY_CFG["zones"]["top_active"]        # normalmente 3
+BOTTOM_ACTIVE = STRATEGY_CFG["zones"]["bottom_active"]  # normalmente 2
 
 TARGET_LONG_OFFSET = STRATEGY_CFG["targets"]["long"]
 TARGET_SHORT_OFFSET = STRATEGY_CFG["targets"]["short"]
 
 # ============================================================
-# Helpers
+# Helpers (Pine-like)
 # ============================================================
 
 def zones_in_sequence(zones):
@@ -37,7 +34,7 @@ def percentage_since_last_extreme(window):
     low_idx = np.argmin(window)
     last_extreme_idx = max(high_idx, low_idx)
     dist = len(window) - last_extreme_idx - 1
-    return (dist / len(window)) * 100
+    return (dist / len(window)) * 100.0
 
 
 def compute_log_zones(price_min, price_max, n_zones):
@@ -47,21 +44,47 @@ def compute_log_zones(price_min, price_max, n_zones):
     return np.exp(levels)
 
 
-def get_less_active_zones(activity, bottom_active):
-    sorted_indices = np.argsort(activity)
-    cutoff_index = sorted_indices[bottom_active - 1]
-    cutoff_value = activity[cutoff_index]
+def select_top_n(activity, n):
+    """Seleciona top N de forma determinística (igual Pine)."""
+    selected = []
+    used = set()
 
-    strictly_lower = np.where(activity < cutoff_value)[0].tolist()
-    equal_cutoff = np.where(activity == cutoff_value)[0].tolist()
+    for _ in range(n):
+        max_val = -np.inf
+        max_idx = -1
+        for i, val in enumerate(activity):
+            if i in used:
+                continue
+            if val > max_val:
+                max_val = val
+                max_idx = i
+        selected.append(max_idx)
+        used.add(max_idx)
 
-    remaining = bottom_active - len(strictly_lower)
-    selected_equal = random.sample(equal_cutoff, remaining) if remaining > 0 else []
+    return sorted(selected)
 
-    return sorted(strictly_lower + selected_equal)
+
+def select_bottom_n(activity, n):
+    """Seleciona bottom N de forma determinística (igual Pine)."""
+    selected = []
+    used = set()
+
+    for _ in range(n):
+        min_val = np.inf
+        min_idx = -1
+        for i, val in enumerate(activity):
+            if i in used:
+                continue
+            if val < min_val:
+                min_val = val
+                min_idx = i
+        selected.append(min_idx)
+        used.add(min_idx)
+
+    return sorted(selected)
 
 # ============================================================
-# Estratégia principal (MODELO REATIVO)
+# Estratégia principal (Python = Pine)
 # ============================================================
 
 def log_zones_activity_strategy(
@@ -90,21 +113,15 @@ def log_zones_activity_strategy(
     for i in range(lookback - 1, n):
 
         # ====================================================
-        # Gerenciamento de posição (intra-candle)
+        # Gerenciamento de posição
         # ====================================================
         if in_long:
-            if low[i] <= stop_price:
-                exits_long[i] = True
-                in_long = False
-            elif high[i] >= target_price:
+            if low[i] <= stop_price or high[i] >= target_price:
                 exits_long[i] = True
                 in_long = False
 
         if in_short:
-            if high[i] >= stop_price:
-                exits_short[i] = True
-                in_short = False
-            elif low[i] <= target_price:
+            if high[i] >= stop_price or low[i] <= target_price:
                 exits_short[i] = True
                 in_short = False
 
@@ -112,52 +129,80 @@ def log_zones_activity_strategy(
             continue
 
         # ====================================================
-        # Janela REATIVA (inclui candle atual)
+        # Janela reativa
         # ====================================================
         start = i - lookback + 1
         end = i + 1
 
-        window_close = close[start:end]
-        window_open  = open_[start:end]
-        window_low   = low[start:end]
-        window_high  = high[start:end]
+        w_open  = open_[start:end]
+        w_close = close[start:end]
+        w_low   = low[start:end]
+        w_high  = high[start:end]
 
-        if percentage_since_last_extreme(window_close) < min_percent_from_extreme:
+        if percentage_since_last_extreme(w_close) < min_percent_from_extreme:
             continue
 
-        price_min = window_low.min()
-        price_max = window_high.max()
+        price_min = float(w_low.min())
+        price_max = float(w_high.max())
 
         limits = compute_log_zones(price_min, price_max, TOTAL_ZONES)
-        activity = np.zeros(TOTAL_ZONES)
 
-        for j in range(len(window_close)):
-            body_low = min(window_open[j], window_close[j])
-            body_high = max(window_open[j], window_close[j])
+        activity_up = np.zeros(TOTAL_ZONES, dtype=float)
+        activity_down = np.zeros(TOTAL_ZONES, dtype=float)
+
+        # ====================================================
+        # CÁLCULO DE ATIVIDADE — 100% IGUAL AO PINE
+        #
+        # amp = ((inter_high - inter_low) / body_low) * 100
+        # ====================================================
+        for j in range(len(w_close)):
+            o = float(w_open[j])
+            c = float(w_close[j])
+
+            if c == o:
+                continue
+
+            if c > o:  # candle de alta
+                body_low = o
+                body_high = c
+                target_array = activity_up
+            else:      # candle de baixa
+                body_low = c
+                body_high = o
+                target_array = activity_down
+
+            if body_low <= 0:
+                continue  # proteção (equivalente implícito do Pine)
 
             for z in range(TOTAL_ZONES):
-                overlap_low = max(body_low, limits[z])
-                overlap_high = min(body_high, limits[z + 1])
+                lim_inf = limits[z]
+                lim_sup = limits[z + 1]
 
-                if overlap_high > overlap_low:
-                    activity[z] += (overlap_high - overlap_low) / body_low
+                inter_low = max(body_low, lim_inf)
+                inter_high = min(body_high, lim_sup)
 
-        top_zones = np.argsort(activity)[-TOP_ACTIVE:]
+                if inter_high > inter_low:
+                    amp = (inter_high - inter_low) / body_low * 100.0
+                    target_array[z] += amp
+
+        activity_total = activity_up + activity_down
+
+        # ====================================================
+        # Seleção Pine-like das zonas
+        # ====================================================
+        top_zones = select_top_n(activity_total, TOP_ACTIVE)
 
         if TOP_ACTIVE != 3 or not zones_in_sequence(top_zones):
             continue
 
-        top_sorted = sorted(top_zones)
-        central_zone = top_sorted[1]
-
-        less_active = get_less_active_zones(activity, BOTTOM_ACTIVE)
+        central_zone = sorted(top_zones)[1]
+        bottom_zones = select_bottom_n(activity_total, BOTTOM_ACTIVE)
 
         # ====================================================
         # LONG
         # ====================================================
-        if central_zone + TARGET_LONG_OFFSET < len(limits):
+        if central_zone + TARGET_LONG_OFFSET < TOTAL_ZONES:
             level = limits[central_zone + 1]
-
             crossed_up = close[i - 1] <= level and close[i] > level
 
             if crossed_up:
@@ -166,7 +211,7 @@ def log_zones_activity_strategy(
                 target_price = limits[central_zone + TARGET_LONG_OFFSET]
 
                 if max_loss_percent:
-                    loss = (entry_price - stop_price) / entry_price * 100
+                    loss = (entry_price - stop_price) / entry_price * 100.0
                     if loss > max_loss_percent:
                         continue
 
@@ -179,7 +224,6 @@ def log_zones_activity_strategy(
         # ====================================================
         if central_zone - TARGET_SHORT_OFFSET >= 0:
             level = limits[central_zone]
-
             crossed_down = close[i - 1] >= level and close[i] < level
 
             if crossed_down:
@@ -188,7 +232,7 @@ def log_zones_activity_strategy(
                 target_price = limits[central_zone - TARGET_SHORT_OFFSET]
 
                 if max_loss_percent:
-                    loss = (stop_price - entry_price) / entry_price * 100
+                    loss = (stop_price - entry_price) / entry_price * 100.0
                     if loss > max_loss_percent:
                         continue
 
@@ -196,6 +240,9 @@ def log_zones_activity_strategy(
                 in_short = True
                 continue
 
+    # ====================================================
+    # Conflitos
+    # ====================================================
     exits_long |= entries_short
     exits_short |= entries_long
 
